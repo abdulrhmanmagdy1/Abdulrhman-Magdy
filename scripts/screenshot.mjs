@@ -71,7 +71,7 @@ const IGNORED_REQUEST_PATTERNS = [
   /\/wpm@/,                              // Web Pixels Manager
   /web-pixels@/,                         // web pixel sandbox; aborted on teardown
   /monorail-edge/,                       // analytics beacon
-  /\/api\/collect/,                      // analytics beacon
+  /\/api\/(event\/)?collect/,            // analytics beacon — Horizon posts /api/collect, Dawn /api/event/collect
   /origin_trials-[a-f0-9]+\.js/,         // Chrome origin-trial script, CORS-blocked from 127.0.0.1
   /\/services\/login_with_shop\//,       // Login with Shop embed rejects the dev origin
   /shop\.app\//,                         // Shop Pay / shop.app embed, same cause
