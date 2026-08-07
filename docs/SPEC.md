@@ -29,8 +29,9 @@ Verifier: **QA** = `qa-tester` · **DA** = `design-auditor` · **ORCH** = orches
 | S0.8 | The script exits **non-zero** on console errors, page errors, failed requests, broken images, or horizontal overflow. | QA | [x] |
 | S0.9 | `.gitignore` excludes `qa/`, `design-reference/`, `node_modules/`. | ORCH | [x] |
 | S0.10 | The loop was proven on the **untouched** theme **before** any feature code. | ORCH | [x] |
-| S0.11 | **The harness is deterministic:** 5 consecutive runs against unchanged stock Dawn all exit 0. *(Added after MAJOR-1: one green run is not evidence — the Horizon-era `/api/collect` allowlist missed Dawn's `/api/event/collect`, producing a 1-in-5 false failure.)* | QA | [x] |
-| S0.12 | The noise allowlist suppresses **only** documented `theme dev` proxy events; every entry carries a comment justifying it, and suppressed counts print on every run. | QA | [x] |
+| S0.11 | **The harness is deterministic within a valid dev-server session:** ≥5 consecutive runs against unchanged stock Dawn all exit 0. *(Added after MAJOR-1: one green run is not evidence — the Horizon-era `/api/collect` allowlist missed Dawn's `/api/event/collect`, a 1-in-5 false failure. Evidence: QA re-verify 5/5, ORCH 6/6 — `docs/PROGRESS.md` P1.10/P1.14.)* | QA | [x] |
+| S0.12 | The noise allowlist suppresses **only** documented `theme dev` proxy events; **every entry carries a comment justifying it**, and suppressed counts print on every run. Proven by probe injection, not inspection: a URL merely *containing* "collect" is still caught. | QA | [x] |
+| S0.13 | **Storefront-password session expiry is diagnosed, not misreported.** A 401/403 preflight, and 401/403 requests arriving mid-run, both produce an explicit "session expired — restart the dev server" message rather than a generic failure. | QA | [x] |
 
 ---
 

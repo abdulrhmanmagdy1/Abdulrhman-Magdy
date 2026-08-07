@@ -54,18 +54,26 @@ const FULL = !argv['no-full'];
 const LENIENT = Boolean(argv.lenient);
 
 /**
- * Platform noise allowlist — calibrated against a capture of UNTOUCHED Horizon
- * 4.1.3 on 2026-08-07 (docs/PROGRESS.md P0.5). Every entry below fires on stock
- * theme code with zero features added, and is caused by `shopify theme dev`
- * proxying the storefront from http://127.0.0.1:9292 instead of the real domain.
+ * Platform noise allowlist — calibrated against UNTOUCHED **Dawn 15.5.0**
+ * (docs/PROGRESS.md P1.8/P1.10). Every entry fires on stock theme code with zero
+ * features added, caused by `shopify theme dev` proxying the storefront from
+ * http://127.0.0.1:9292 instead of the real domain.
  *
- * These are suppressed so the harness can fail on OUR bugs. Suppression is by
- * specific URL/message, never blanket: a generic "Failed to load resource" is
- * matched on the offending URL from its console location, not on message text.
- * Suppressed counts are always printed — nothing hides silently.
+ * Suppressed so the harness can fail on OUR bugs. Suppression is anchored to
+ * specific URLs wherever possible; the few message-text patterns below
+ * (IGNORED_CONSOLE_PATTERNS) exist only for events whose console location
+ * carries no usable URL, and each is backed by the URL-scoped request check,
+ * which stays authoritative. Suppressed counts print on every run — nothing
+ * hides silently.
  *
- * DO NOT add to this list to make a failing run go green. Add only when you can
- * reproduce the same event on stock Horizon, and say why in the comment.
+ * DO NOT add an entry to make a failing run go green. Add only when you can
+ * reproduce the event on stock **Dawn**, and say why in the comment.
+ *
+ * ⚠ This list is theme-specific. It was originally calibrated against Horizon
+ * and silently rotted when the project moved to Dawn: `/api/collect` did not
+ * match Dawn's `/api/event/collect`, producing a 1-in-5 false failure that read
+ * as flakiness. Re-validate on any theme change — 5 consecutive green runs
+ * (SPEC S0.11), never one.
  */
 const IGNORED_REQUEST_PATTERNS = [
   /\/wpm@/,                              // Web Pixels Manager
@@ -78,8 +86,8 @@ const IGNORED_REQUEST_PATTERNS = [
   /\/sf_private_access_tokens/,          // Storefront API token exchange, 400 via dev proxy
   /\/api\/\d{4}-\d{2}\/graphql\.json/,   // Storefront API, 400 via dev proxy
   /^blob:/,                              // media blobs aborted on navigation
-  /\/\.well-known\//,
-  /favicon\.ico$/,
+  /\/\.well-known\//,                    // browser probes (DevTools, passkeys); never theme-owned
+  /favicon\.ico$/,                       // absent favicon on a dev store; cannot mask a section defect
 ];
 
 const IGNORED_CONSOLE_PATTERNS = [
@@ -256,11 +264,35 @@ async function main() {
 
   const pre = await preflight(TARGET);
   if (!pre.ok) {
-    console.error(
-      `✗ ${TARGET} is not answering (status ${pre.status}${pre.error ? `: ${pre.error}` : ''}).\n` +
+    // Distinguish the failure modes — they need different fixes, and a generic
+    // "not answering" sent us chasing a phantom determinism bug once already.
+    let diagnosis;
+    if (pre.status === 401 || pre.status === 403) {
+      diagnosis =
+        `  The dev server is UP but the storefront-password session has EXPIRED.\n` +
+        `  \`shopify theme dev\` holds a storefront_digest cookie that times out on a\n` +
+        `  password-protected store; every request then 401s. This is not a theme bug\n` +
+        `  and not harness flakiness — restart the dev server:\n` +
+        `    pkill -f "shopify theme dev"\n` +
+        `    shopify theme dev --store=abdulrhman-magdy-48-teststore.myshopify.com \\\n` +
+        `      --store-password=<storefront password> --live-reload off`;
+    } else if (pre.status === 500) {
+      diagnosis =
+        `  The dev server is UP but returning 500. Most likely the CLI reused a\n` +
+        `  development theme created from a DIFFERENT base theme, leaving colliding\n` +
+        `  files. Delete the stale development theme and let the CLI recreate it:\n` +
+        `    shopify theme list --store=…   # find the [development] entry\n` +
+        `    shopify theme delete --theme <id> --force`;
+    } else {
+      diagnosis =
         `  Start the dev server first:\n` +
-        `    shopify theme dev --store=abdulrhman-magdy-48-teststore.myshopify.com --store-password=<pw>\n` +
-        `  A blank screenshot is worse than no screenshot — refusing to capture.`
+        `    shopify theme dev --store=abdulrhman-magdy-48-teststore.myshopify.com \\\n` +
+        `      --store-password=<storefront password> --live-reload off`;
+    }
+    console.error(
+      `✗ ${TARGET} preflight failed (status ${pre.status}${pre.error ? `: ${pre.error}` : ''}).\n` +
+        diagnosis +
+        `\n  A blank screenshot is worse than no screenshot — refusing to capture.`
     );
     process.exit(2);
   }
@@ -284,6 +316,14 @@ async function main() {
 
     console.log(`${res.healthy ? '✓' : '✗'} ${width}px  →  ${res.files.map((f) => path.basename(f)).join(', ')}${res.attempt > 1 ? `  (attempt ${res.attempt})` : ''}`);
     console.log(`    ${res.bytes.map((b) => `${(b / 1024).toFixed(0)}KB`).join(', ')}  ·  scrollWidth ${res.metrics.scrollWidth} / innerWidth ${res.metrics.innerWidth}${res.overflow ? '  ← HORIZONTAL OVERFLOW' : ''}`);
+    // The storefront-password session can expire DURING a run: preflight passes
+    // at 200, then assets start 401ing mid-capture. Without this, it reads as a
+    // theme defect or as harness flakiness. It is neither.
+    const authFailures = res.failedRequests.filter((r) => r.status === 401 || r.status === 403);
+    if (authFailures.length) {
+      console.log(`    ⚠ ${authFailures.length} request(s) returned 401/403 — the storefront-password session expired MID-RUN.`);
+      console.log(`      Not a theme defect. Restart the dev server and re-run; do not chase this as a bug.`);
+    }
     if (res.metrics.imagesBroken) console.log(`    ✗ ${res.metrics.imagesBroken}/${res.metrics.imagesTotal} images failed to load: ${res.metrics.brokenSrcs.join(', ')}`);
     for (const e of res.consoleErrors) console.log(`    ✗ console.error: ${e.text}`);
     for (const e of res.pageErrors) console.log(`    ✗ pageerror: ${e.message}`);

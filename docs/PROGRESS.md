@@ -326,3 +326,75 @@ suppressed platform events per width), which is evidence it was keyed to
 
 **Notes:** These captures are the regression control for "no layout regression
 outside our sections". The Horizon-era `baseline-*.png` set is now void.
+
+---
+
+## [2026-08-07 21:10 EEST] P1.9–P1.14 — Phase 1 audited, rejected, repaired, re-verified
+
+**Done:** Dispatched `qa-tester` to verify the Phase 1 exit criteria independently.
+It returned **REJECT** (2 MAJOR, 3 MINOR), then **PASS** on re-verification.
+Recording what it caught, because the value of the agent separation is only
+visible in the findings the orchestrator did not self-report.
+
+**MAJOR-1 — the harness was non-deterministic and would have trained us to
+ignore it.** The allowlist entry `/\/api\/collect/` was calibrated against
+Horizon; Dawn's Web Pixels posts to `/api/event/collect`, so the pattern missed
+and the aborted beacon surfaced as a failed request. QA's *first* run exited 1;
+runs 2–5 exited 0. The orchestrator's single green run was luck, and had been
+reported to the user as evidence that the allowlist "transferred cleanly to
+Dawn" — a claim that was false and has been corrected. Fixed the regex; proved
+determinism with consecutive runs rather than one.
+
+**MAJOR-2 — `docs/SPEC.md` was actively dangerous.** `CLAUDE.md` was realigned
+to Dawn in P1.7 and SPEC was not, despite `PLAN.md` Phase 1 item 7 mandating it.
+It still asserted Horizon was at the repo root — **marked `[x]` verified, and
+factually false** — and S5.9 still mandated the `tisso-` prefix that ADR-008
+retired, so a builder obeying SPEC would have shipped `tisso-banner.liquid` and
+failed constraint C4. It had no assertions at all for the graded feature set.
+Rewritten: 9 sections, ~90 assertions, including S8 making "nothing from Dawn"
+grep-checkable and S5.5 forcing the cart rule's **negative** case.
+
+**MINOR-3/4/5:** `development` was unpushed (a clone of the public repo would
+have received Horizon-era memory); ADR-010 added; void Horizon baselines deleted.
+
+**Re-verification (PASS) raised four more minors, all now cleared:**
+- **6** — S0.12 was ticked while 2 of 12 allowlist entries lacked justifying
+  comments. Both now carry one; verified mechanically (`0` uncommented entries).
+- **7** — the allowlist docblock still named Horizon as the calibration baseline,
+  the exact debt that caused MAJOR-1. Rewritten to Dawn, with an explicit warning
+  that the list is theme-specific and must be re-validated on any theme change.
+- **8** — the docblock claimed suppression was never by message text, which the
+  `ERR_FAILED` entry contradicted. Reworded to state the real rule: message-text
+  patterns exist only where the console location carries no usable URL, and the
+  URL-scoped request check remains authoritative.
+- **9** — S0.11 had been ticked with no recorded evidence. Evidence now cited.
+
+**A new failure mode was found while clearing these, and is now diagnosed:**
+after ~1 hour the dev server began returning **401 on every request**.
+`shopify theme dev` holds a `storefront_digest` cookie for a password-protected
+store, and it expires. This produced two different symptoms that looked like two
+different bugs: preflight `exit 2` once expired, and — when the session died
+*mid-capture* — a spurious `exit 1` that looked exactly like the determinism bug
+we had just fixed. The harness now names it explicitly in both cases rather than
+reporting a generic failure.
+
+**Files:** `scripts/screenshot.mjs` (allowlist comments, docblock rewrite,
+preflight diagnosis for 401/403 and 500, mid-run 401/403 detection),
+`docs/SPEC.md` (S0.11 evidence, S0.12 tightened, S0.13 added),
+`docs/DECISIONS.md` (ADR-010), `docs/PROGRESS.md`
+
+**Verified:** QA re-verification **PASS** — zero BLOCKER, zero MAJOR. Its
+over-suppression check was stronger than the orchestrator's: it stood up a probe
+server and injected five failure classes, including a URL *containing* "collect"
+(`/collections/collect-me.js`) which was **still caught** (exit 1), proving the
+suppression is anchored to `/api/[event/]collect` and is not a blanket match.
+It also swept the full git history of every ref for the store password and six
+token patterns — **zero matches**, which matters because the repo is public.
+ORCH — determinism re-proven after the docblock edits: **6/6 exit 0** on a fresh
+session.
+
+**SPEC:** S0.1–S0.13, S1.1, S1.2, S1.3, S1.4, S9.6 ✓
+
+**Notes:** **Phase 1 has exactly one item left: SPEC S1.6**, the Shopify GitHub
+integration, which no CLI surface exposes and which needs a human in the admin.
+Everything else in Phase 1 is closed.
