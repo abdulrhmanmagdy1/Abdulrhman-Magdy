@@ -236,3 +236,93 @@ shorter 3-day window = **8 Aug 2026**. Today is 7 Aug. Roughly one working day
 remains. `docs/PLAN.md` is sequenced accordingly: delivery rails and a live
 walking skeleton first, polish last.
 
+
+---
+
+## [2026-08-07 19:45 EEST] P1.1–P1.5 — Dawn published live; delivery rails established
+
+**Done:** Executed the highest-risk phase first, because these are the only
+failures that are *unrecoverable* — a perfect page in a private repo scores zero.
+
+1. Stopped the Horizon dev server; cloned Dawn (**15.5.0**) from
+   `github.com/Shopify/dawn`.
+2. `shopify theme push --unpublished` → theme **#196652761254**, then
+   `shopify theme publish`. Dawn is now `[live]`; Horizon (#196606689446) is
+   `[unpublished]`, **not deleted**, and restorable.
+3. Removed the Horizon working tree and `shopify theme pull`ed the **live Dawn**
+   back down, so the committed baseline is the store's actual live theme rather
+   than a lookalike clone.
+4. Created the **public** repo `abdulrhmanmagdy1/Abdulrhman-Magdy`, committed
+   untouched Dawn to `master` (`0591ab4`, 366 files), pushed, set default branch.
+5. Branched `development`, committed the Phase 0 tooling (`cedec23`), pushed.
+
+**Files:**
+- `assets/` (191), `config/` (2), `layout/` (2), `locales/` (51), `sections/` (55),
+  `snippets/` (39), `templates/` (14) — Dawn 15.5.0, untouched, on `master`
+- `.claude/`, `CLAUDE.md`, `docs/`, `scripts/`, `package.json` — on `development`
+
+**Verified:** ORCH — `shopify theme list` shows `Dawn [live] #196652761254`;
+`gh repo view` reports `"visibility":"PUBLIC"`; both branches pushed and tracking.
+Independent QA verification dispatched separately (see P1.9).
+
+**SPEC:** S0.3 (re-established against Dawn)
+
+**Notes:** Confirmed the forbidden Dawn components are present in the tree and
+must be avoided, not merely unused by accident: `snippets/card-product.liquid`,
+`snippets/product-variant-picker.liquid`, `assets/quick-add.js`,
+`snippets/quick-order-list*.liquid`.
+
+---
+
+## [2026-08-07 19:52 EEST] P1.7 — Project memory realigned from Horizon to Dawn
+
+**Done:** Rewrote `CLAUDE.md` around the real brief: Dawn 15.5.0 as host theme,
+C1 ("nothing from Dawn") promoted to the first and most emphasised constraint,
+the mandated section filenames, the Black+M business rule with its `M`/`Medium`
+normalisation and match-by-option-name requirement, and the verified product
+handles. Added three ADRs.
+
+**Files:** `CLAUDE.md` (rewritten), `docs/DECISIONS.md` (+ADR-007/008/009),
+`docs/PLAN.md` (new), `docs/PROGRESS.md`
+
+**Verified:** ORCH — `docs/DECISIONS.md` now holds 9 ADRs; ADR-007 explicitly
+supersedes ADR-001 rather than editing it away, preserving the reversal trail.
+
+**SPEC:** S0.1, S0.2
+
+**Notes:** ADR-009 is the load-bearing one. Dawn's `base.css` is global and
+already defines `.banner`, `.card`, `.grid`, `.button`, `.price` — a section
+literally named `banner.liquid` styling a `.banner` element would silently
+inherit Dawn styling and violate C1 while *looking* correct. Hence the `ee-`
+namespace, verified by grep rather than by inspection.
+
+---
+
+## [2026-08-07 19:58 EEST] P1.8 — QA pipeline re-proven against Dawn
+
+**Done:** First restart of the dev server returned **HTTP 500** on every request.
+Cause: `shopify theme dev` reused development theme #196651712678, which had been
+created from *Horizon*; serving Dawn files into it left the two themes' files
+colliding. Deleted that ephemeral development theme (CLI-created, auto-expiring —
+the disposable kind, not a graded one) and let the CLI create a fresh one.
+Recaptured the baseline.
+
+**Files:** `qa/screens/baseline-dawn-{1440,768,375}{,-full}.png`,
+`qa/screens/baseline-dawn-report.json`
+
+**Verified:** ORCH — capture exited **0**, `✓ all 3 width(s) captured clean`:
+
+| width | scrollWidth/innerWidth | console errors | page errors | failed reqs | broken images |
+|---|---|---|---|---|---|
+| 1440 | 1440 / 1440 | 0 | 0 | 0 | 0 |
+| 768  | 768 / 768   | 0 | 0 | 0 | 0 |
+| 375  | 375 / 375   | 0 | 0 | 0 | 0 |
+
+The allowlist calibrated against Horizon transferred cleanly to Dawn (8–9
+suppressed platform events per width), which is evidence it was keyed to
+`theme dev` proxy behaviour rather than fitted to one theme's quirks.
+
+**SPEC:** S0.4, S0.6, S0.7, S0.8, S0.10 (re-established against Dawn)
+
+**Notes:** These captures are the regression control for "no layout regression
+outside our sections". The Horizon-era `baseline-*.png` set is now void.

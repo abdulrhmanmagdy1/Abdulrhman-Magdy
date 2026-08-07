@@ -2,44 +2,60 @@
 
 > **Read this file first, every session.** It is the single source of truth for
 > how this project is built, verified, and shipped. If this session was
-> compacted, interrupted, or resumed: read this file, then `docs/PROGRESS.md`
-> (what is done), then `docs/SPEC.md` (what is left), then `docs/DECISIONS.md`
-> (why things are the way they are).
+> compacted, interrupted, or resumed, read in this order:
+> `CLAUDE.md` → `docs/PLAN.md` (the phased plan) → `docs/PROGRESS.md` (what is
+> done) → `docs/SPEC.md` (what is left) → `docs/DECISIONS.md` (why).
 
 ---
 
 ## 1. What this is
 
-A timed, graded Shopify theme technical assessment. The deliverable is a
-custom **"Tisso vison in the wild"** shoppable-UGC section built into a live
-Shopify theme, matching the supplied Figma/PNG design references pixel-for-pixel
-at three breakpoints.
+A timed, graded technical test for a **Shopify Front-End Developer** role at
+**EcomExperts**. Test ID `3b29ca8db0d7812c8f29daf06ff66e7b`.
+
+A Figma design must be implemented **pixel perfect** as a **new page** on a
+Shopify store. Graded on **code structure, comments, efficiency, and reuse** —
+so the reasoning artefacts in `docs/` are deliverables, not overhead.
 
 - **Store:** `abdulrhman-magdy-48-teststore.myshopify.com`
-- **Base theme:** Horizon `4.1.3` (theme id `196606689446`, currently `[live]`)
-- **Design references:** `design-reference/desktop.png`, `design-reference/mobile.png`
+- **Live theme:** **Dawn 15.5.0** (`#196652761254`)
+- **Repo:** `github.com/abdulrhmanmagdy1/Abdulrhman-Magdy` (**public**, mandatory)
+- **Figma:** fileKey `EOnLQN0Q4BDBYH7Hh0N59T` — desktop `1:1588` (1440×2000), mobile `1:1802` (375×1200)
+- **Deadline:** **8 Aug 2026** (invitation 5 Aug + the shorter 3-day window)
 
-Grading rewards **reasoning as much as output**. `docs/DECISIONS.md` is a
-deliverable, not overhead.
+> Horizon (`#196606689446`) was the store's original live theme. It is
+> **unpublished, not deleted**, and remains restorable. See ADR-007.
 
 ---
 
 ## 2. Hard constraints
 
-These are non-negotiable. A change that violates one of these is rejected on
-sight, regardless of whether it "works".
+Non-negotiable. A change that violates one of these is rejected on sight,
+regardless of whether it "works".
 
 | # | Constraint |
 |---|---|
-| C1 | **Liquid + CSS + vanilla JS only.** No React/Vue/Svelte, no jQuery, no CSS frameworks, no build step for theme assets. |
-| C2 | **No external dependencies at runtime.** No CDN scripts, no web fonts from third parties, no remote images. Everything ships from `assets/` or Shopify's CDN. |
-| C3 | **Merchant-configurable.** Every piece of content in the section is editable from the theme editor. Nothing user-visible is hardcoded in Liquid. |
-| C4 | **The grid is exactly 6 blocks**, each bound to a product picker — see `docs/SPEC.md` for the full testable list. |
-| C5 | **Responsive at 1440 / 768 / 375** with no horizontal overflow and no layout shift at any of the three widths. |
-| C6 | **Accessible:** keyboard-operable hotspots, visible focus ring, correct ARIA roles/labels, alt text on every image, `prefers-reduced-motion` respected. |
-| C7 | **Horizon conventions are followed, not fought.** Use Horizon's existing CSS custom properties, `{% schema %}` patterns, theme blocks (`{% content_for 'blocks' %}`), and section-group model. Do not reimplement what the theme already provides. |
-| C8 | **No modification of stock Horizon files** unless a decision recorded in `docs/DECISIONS.md` justifies it. New work goes in new files. |
-| C9 | **QA closes tasks, not the builder.** See §6. |
+| **C1** | **NOTHING FROM DAWN.** No ready-made Dawn section, snippet, or component. Specifically forbidden: `card-product.liquid`, `product-form.liquid`, `product-variant-picker.liquid`, `quick-add.js`, `modal-dialog` / `<modal-opener>`, `quick-order-list*`, and **any reliance on Dawn's `.card` / `.button` / `.grid` / `.banner` / `.price` CSS classes**. Everything is built from scratch with its own namespaced CSS. *The brief states this twice in one sentence — it is the single most likely thing to be checked.* |
+| **C2** | **Vanilla JS only.** No jQuery, no React/Vue/Tailwind/Bootstrap, no page builders, no external libraries, no CDN, no runtime dependency. |
+| **C3** | **Liquid + CSS + vanilla JS**, following Shopify theme best practices. |
+| **C4** | **Exactly two new sections:** `sections/banner.liquid` and `sections/product-grid.liquid`. |
+| **C5** | **Nothing hardcoded.** Every text in the design's red rectangles is editable from the Theme Customizer via section schema. The grid's 6 products come from product pickers. |
+| **C6** | **Hotspot position is a per-block setting** (X/Y percentages). It differs in every image; hardcoding it fails both the design and the customizer requirement. |
+| **C7** | **Resolve products by handle, never by title.** "Soft Winter Jacket" is `dark-winter-jacket` — verified: `/products/soft-winter-jacket.js` → 404. |
+| **C8** | **Responsive:** desktop, tablet, and mobile all match the design. Zero horizontal overflow at 1440 / 768 / 375. |
+| **C9** | **Accessible:** keyboard-operable hotspots, visible focus, dialog semantics, alt text, `prefers-reduced-motion`. |
+| **C10** | **QA closes tasks, not the builder.** See §6. |
+
+### The business rule (easy to get silently wrong)
+
+Whenever a product is added to cart with **Color = Black AND Size = M**, the
+product **`dark-winter-jacket`** ("Soft Winter Jacket") must **also** be added
+automatically.
+
+- Real option values: **Option1 = Size** → `XS, S, M, L`; **Option2 = Color** → `Black, White`.
+- **"Medium" does not exist in the data.** Normalise so `M` *and* `Medium`
+  both match, case-insensitively.
+- **Match on option *name*, never on option *index*.** Position is not guaranteed.
 
 ---
 
@@ -47,142 +63,146 @@ sight, regardless of whether it "works".
 
 | Layer | Choice |
 |-------|--------|
-| Templating | Shopify Liquid (Online Store 2.0, theme blocks) |
-| Styling | Plain CSS, scoped by section id, using Horizon's design tokens / CSS custom properties |
-| Behaviour | Vanilla JS, ES modules, custom elements (`class X extends HTMLElement`), matching Horizon's existing web-component style |
-| Local dev | Shopify CLI `4.6.x` → `shopify theme dev --store=abdulrhman-magdy-48-teststore.myshopify.com` |
-| Visual QA | Playwright (chromium) → `scripts/screenshot.mjs` → `qa/screens/*.png` |
-| Design diffing | `design-auditor` agent: rendered PNG vs `design-reference/*.png` |
-| VCS | git (local) |
+| Base theme | Dawn 15.5.0 (used as a *host*, never as a component library) |
+| Templating | Shopify Liquid, Online Store 2.0 sections + blocks |
+| Styling | Plain CSS, `ee-` namespaced BEM, scoped per section (ADR-009) |
+| Behaviour | Vanilla JS, ES modules, custom elements |
+| Cart | Shopify **Ajax Cart API** (`/cart/add.js`, `/cart.js`) |
+| Local dev | `shopify theme dev --store=… --store-password=… --live-reload off` |
+| Visual QA | Playwright chromium → `scripts/screenshot.mjs` → `qa/screens/` |
+| Design source | Figma MCP (`get_metadata`, `get_design_context`, `get_screenshot`) |
+| VCS | git + GitHub, public repo, `master` ← PR ← `development` |
 
 ---
 
 ## 4. File layout
 
 ```
-/                                  # theme root — shopify theme dev runs from here
+/                                  # repo root == theme root
 ├── CLAUDE.md                      # this file
-├── .gitignore
-├── package.json                   # dev-only; Playwright. NOT a theme build step.
-├── .claude/
-│   └── agents/                    # subagent definitions
-│       ├── builder.md
-│       ├── qa-tester.md
-│       └── design-auditor.md
+├── .gitignore                     # ignores qa/, design-reference/, node_modules/
+├── package.json                   # dev-only (Playwright). NOT a theme build step.
+├── .claude/agents/                # builder.md · qa-tester.md · design-auditor.md
 ├── docs/
+│   ├── PLAN.md                    # phased plan + risk register
 │   ├── SPEC.md                    # requirements as testable assertions
 │   ├── PROGRESS.md                # append-only work log
-│   └── DECISIONS.md               # ADR log
-├── scripts/
-│   └── screenshot.mjs             # Playwright capture at 1440/768/375
-├── qa/                            # gitignored working artifacts
-│   ├── screens/                   # rendered PNGs
-│   └── reports/                   # QA + audit reports
-├── design-reference/              # gitignored; supplied design PNGs
+│   ├── DECISIONS.md               # ADR log
+│   └── DESIGN-TOKENS.md           # exact values extracted from Figma (Phase 2)
+├── scripts/screenshot.mjs         # capture + health harness
+├── qa/                            # gitignored: screens/ + reports/
+├── design-reference/              # gitignored: supplied design exports
 │
-└── ...Horizon theme dirs (assets, blocks, config, layout, locales,
-    sections, snippets, templates)
+└── Dawn 15.5.0: assets/ config/ layout/ locales/ sections/ snippets/ templates/
 ```
 
 ### Where our code goes
 
-| Kind | Path | Notes |
-|------|------|-------|
-| Section | `sections/tisso-in-the-wild.liquid` | one file, own `{% schema %}` |
-| Theme block | `blocks/tisso-wild-tile.liquid` | the repeated grid tile |
-| CSS | `assets/tisso-in-the-wild.css` | loaded via `{{ 'tisso-in-the-wild.css' | asset_url | stylesheet_tag }}` |
-| JS | `assets/tisso-in-the-wild.js` | loaded via `<script src=… type="module">` |
-| Locale strings | `locales/en.default.json` under a `tisso` namespace | append only; never reorder existing keys |
+| Kind | Path |
+|------|------|
+| Banner section | `sections/banner.liquid` |
+| Grid section | `sections/product-grid.liquid` |
+| CSS | `assets/ee-banner.css`, `assets/ee-product-grid.css` |
+| JS | `assets/ee-product-grid.js` (hotspots, popup, cart) |
+| Page template | `templates/page.<handle>.json` |
+| Locale strings | `locales/en.default.json`, `ee.*` namespace, **append only** |
 
 ---
 
 ## 5. Naming conventions
 
-- **Files:** `kebab-case`, prefixed `tisso-` so every file we authored is greppable
-  in one command: `git ls-files | grep tisso`.
-- **CSS classes:** BEM — `.tisso-wild`, `.tisso-wild__tile`, `.tisso-wild__hotspot`,
-  `.tisso-wild__tile--wide`. No utility classes, no bare element selectors.
-- **CSS custom properties:** `--tisso-wild-<prop>` for anything we introduce.
-  Consume Horizon's existing tokens (e.g. `--color-foreground`, `--font-body--family`)
-  rather than redefining colours or type.
-- **Section/block schema ids:** `snake_case` (`product_reference`, `hotspot_x`).
-- **Locale keys:** `tisso.in_the_wild.<key>`.
-- **JS custom elements:** `tisso-<name>` tag, `Tisso<Name>Element` class.
-- **Scoping:** every rule is scoped to the section instance
-  (`#shopify-section-{{ section.id }}` or a `[data-tisso-wild]` attribute). No global leakage.
+- **Section files:** exactly as the brief mandates — `banner.liquid`,
+  `product-grid.liquid`. The `tisso-` prefix convention is retired (ADR-008).
+- **Supporting assets:** `ee-` prefixed (`ee-product-grid.css`).
+- **CSS classes:** `ee-` namespaced BEM — `.ee-banner__title`, `.ee-grid__tile`,
+  `.ee-hotspot`, `.ee-popup__variants`. **Never a bare Dawn class** (ADR-009).
+- **Custom properties:** `--ee-*`.
+- **Schema ids:** `snake_case` (`product`, `hotspot_x`, `hotspot_y`).
+- **JS:** `ee-<name>` custom element tag, `Ee<Name>Element` class.
+- **Scoping:** every rule scoped to the section instance
+  (`#shopify-section-{{ section.id }}` or `[data-ee-grid]`). No global leakage.
+- **Greppability:** `git diff --stat master...development` enumerates every
+  authored file, because `master` is untouched Dawn.
 
 ---
 
 ## 6. Workflow — how a task gets closed
 
-The main session is the **orchestrator**. It decomposes work, dispatches to
-agents, reviews returns, and is the only actor that marks a task complete.
-
 ```
-orchestrator → builder      : implement task N
-builder      → orchestrator : "implemented, files X/Y/Z"     ← NOT a completion
-orchestrator → qa-tester    : verify task N against SPEC lines …
-orchestrator → design-auditor: diff task N at 1440/768/375
+orchestrator → builder       : implement task N
+builder      → orchestrator  : "implemented, files X/Y/Z"   ← NOT a completion
+orchestrator → qa-tester     : verify against SPEC lines …
+orchestrator → design-auditor: diff at 1440/768/375
              ← both must return PASS
-orchestrator                : mark task N complete, append to docs/PROGRESS.md
+orchestrator                 : mark complete, log to docs/PROGRESS.md, commit
 ```
 
-- `builder` **may not** declare its own work correct. Its report is a claim.
-- `qa-tester` **never** writes feature code. It signs off or it rejects with evidence.
-- `design-auditor` reports **concrete deltas** (px, hex, font-size) — never
-  "looks close".
-- A **REJECT from either agent reopens the task.** No partial credit, no
-  "good enough for now" without an entry in `docs/DECISIONS.md`.
-- Every closed task appends one entry to `docs/PROGRESS.md` and ticks its
-  `docs/SPEC.md` lines.
+- `builder` **may not** declare its own work correct; its report is a claim and
+  must end `STATUS: IMPLEMENTED — NOT VERIFIED`.
+- `qa-tester` **never** writes feature code — it can only write `qa/reports/`.
+- `design-auditor` reports **numeric deltas**, never "looks close".
+- A REJECT from either agent reopens the task.
+- Build → verify → log → commit. Commits are a graded deliverable: small,
+  meaningful, on the right branch, explaining **why**.
 
 ---
 
-## 7. The QA loop (must be green before and after every change)
+## 7. The QA loop
 
 ```bash
-# terminal 1 — live preview
-shopify theme dev --store=abdulrhman-magdy-48-teststore.myshopify.com
+# terminal 1
+shopify theme dev --store=abdulrhman-magdy-48-teststore.myshopify.com \
+  --store-password=<storefront password> --live-reload off
 
-# terminal 2 — capture
-node scripts/screenshot.mjs                      # defaults to / at 1440,768,375
-node scripts/screenshot.mjs --path=/ --label=wild --widths=1440,768,375
+# terminal 2
+node scripts/screenshot.mjs --path=/ --label=baseline --widths=1440,768,375
+node scripts/screenshot.mjs --path=/pages/<handle> --label=page --selector="[data-ee-grid]"
 ```
 
-Output: `qa/screens/<label>-<width>.png` (+ `-full.png` full-page).
-The script fails loudly (non-zero exit) on console errors, page errors, or
-failed network requests — a screenshot that renders is not the same as a page
-that is healthy.
+Exits non-zero on console errors, page errors, failed requests, broken images,
+or horizontal overflow. Known `theme dev` proxy noise is allowlisted **by
+specific URL**, and suppressed counts are always printed. Transient CDN 502s are
+**retried, not allowlisted** — a persistently broken image must still fail.
 
-**Rule: the pipeline was proven on the untouched theme before any feature code
-was written.** A verification pipeline stood up after the fact proves nothing.
+**Never wait for `networkidle`** on a Shopify storefront; it never fires.
 
 ---
 
 ## 8. Never do this
 
-1. **Never let a builder close its own task.** QA closes tasks.
-2. **Never report "done" without a rendered PNG** at all three widths and a QA sign-off.
-3. **Never hardcode merchant-facing content** (headings, alt text, links, product handles) in Liquid.
-4. **Never add a runtime dependency** — no CDN, no npm package shipped to the storefront.
-5. **Never edit stock Horizon files** (`assets/*.css|js`, `sections/*`, `snippets/*` that came with 4.1.3) without an ADR.
-6. **Never push to the live theme.** `shopify theme dev` creates a development theme; that is the only thing we deploy to. No `theme push` to `#196606689446`.
-7. **Never use `!important`**, inline `style=` for layout, or fixed pixel heights that break at 375px.
-8. **Never use `{% if %}` to fake a block loop** — the grid must be real theme blocks with real product pickers.
-9. **Never delete or reorder existing locale keys.** Append only.
-10. **Never commit `qa/` or `design-reference/`.** They are working artifacts.
-11. **Never claim a visual match from a description.** Diff the PNGs.
-12. **Never leave `console.log` / commented-out code / TODOs in shipped files.**
-13. **Never run destructive Shopify CLI commands** (`theme delete`, `theme push --live`).
-14. **Never guess at the design.** If a value is unreadable from the reference PNG, record the assumption in `docs/DECISIONS.md` and flag it in the report.
+1. **Never use anything from Dawn** — no snippet, section, component, or CSS class. (C1)
+2. **Never let a builder close its own task.** QA closes tasks.
+3. **Never report "done" without rendered PNGs at all three widths** and a QA sign-off.
+4. **Never verify the cart rule from a cart badge.** Evidence is raw `/cart.js` JSON, positive **and** negative case.
+5. **Never resolve a product by title.** Handle only. (C7)
+6. **Never match a variant option by index.** Match by option name. (C7)
+7. **Never hardcode merchant-facing content** or hotspot positions.
+8. **Never add a runtime dependency** — no jQuery, no CDN, no library.
+9. **Never eyeball a design value.** Extract from Figma via MCP; if genuinely unavailable, record it as a stated assumption in `docs/DECISIONS.md`.
+10. **Never use `!important`**, inline layout styles, or fixed heights that break at 375px.
+11. **Never edit stock Dawn files** without an ADR. New work goes in new files.
+12. **Never commit to `master` directly.** Feature work is on `development`; `master` receives it by PR.
+13. **Never delete or reorder existing locale keys.** Append only.
+14. **Never commit `qa/` or `design-reference/`.**
+15. **Never leave `console.log`, commented-out code, or TODOs in shipped files.**
+16. **Never run destructive Shopify CLI commands** (`theme delete`, or publishing over the graded theme without cause).
 
 ---
 
 ## 9. Known environment facts
 
-- `timeout(1)` is **not** available (macOS/zsh). Use node/perl or background tasks.
-- Shopify CLI is authenticated for this store already.
-- Design reference PNGs are **scaled exports**: `desktop.png` is 1037×1440,
-  `mobile.png` is 256×800. They must be compared **proportionally / by ratio**,
-  not pixel-for-pixel against a 1440px capture. See `docs/DECISIONS.md` ADR-004.
-- `shopify theme dev` serves on `http://127.0.0.1:9292` by default.
+- `timeout(1)` is **not** available (macOS/zsh). Use node or background tasks.
+- Shopify CLI is authenticated; `gh` is authenticated as `abdulrhmanmagdy1`.
+- **The storefront is password-protected** (`/` → 302 → `/password`).
+  `shopify theme dev` requires `--store-password`. Graders will need either the
+  password or protection lifted — flagged to the user.
+- `shopify theme dev` serves on `http://127.0.0.1:9292`.
+- Design reference PNGs are **scaled exports** (desktop 1037×1440, mobile
+  256×800) — compare proportionally, per ADR-004. Figma MCP is the primary
+  source of truth; these exports are the fallback.
+- Verified product handles, in design order:
+  `black-leather-bag`, `blue-silk-tuxedo`, `chequered-red-shirt`,
+  `classic-leather-jacket`, `classic-varsity-top`, `silk-summer-top`.
+  Auto-add target: `dark-winter-jacket`.
+- Grid images come from `product.featured_image` — there is **no** separate
+  image upload.

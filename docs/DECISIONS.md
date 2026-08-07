@@ -205,3 +205,106 @@ SPEC S2.9 ("no layout regression on the rest of the homepage").
 **Consequences.** The baseline must be recaptured if the store's catalogue or
 theme settings change underneath us; the run's JSON sidecar records the capture
 timestamp so drift is detectable.
+
+---
+
+## ADR-007 — Dawn 15.5.0 replaces Horizon as the base theme (supersedes ADR-001)
+
+**Date:** 2026-08-07 · **Status:** Accepted · **Supersedes:** ADR-001
+
+**Context.** ADR-001 chose Horizon because it was the store's live theme and the
+directory held no theme at all. The full brief then arrived and mandates Dawn:
+the assessment instructions assume Dawn, and Shopify changed the default theme
+for new stores to Horizon after those instructions were written. Grading is
+against Dawn's conventions, and one hard constraint is stated in terms of Dawn's
+component library.
+
+**Decision.** Install Dawn 15.5.0, publish it as the store's live theme, then
+pull the *published* theme back into the repo as the baseline.
+
+**Alternatives considered.**
+1. *Keep building on Horizon.* Rejected — directly contradicts the brief.
+   Horizon's theme-block architecture also differs enough from Dawn's that the
+   "no ready-made components" constraint could not be assessed as written.
+2. *Clone Dawn from GitHub and commit that, without publishing.* Rejected — the
+   delivery workflow requires the live theme to be the one committed, and step 3
+   of that workflow connects the repo to a published store theme. Committing a
+   theme that is not the live theme would break the chain.
+3. *Install Dawn from the Shopify Theme Store via the admin UI.* Equivalent in
+   substance but requires browser actions we cannot take. `shopify theme init`
+   clones the same Dawn source Shopify distributes; pushing and publishing it
+   produces an identical live theme.
+
+**Why this won.** The committed baseline is the store's real live theme, which
+is exactly what the delivery workflow assumes, and it keeps `git diff master` a
+precise record of authored work.
+
+**Consequences.** Horizon (#196606689446) is **unpublished, not deleted**, and
+remains restorable. The Phase 0 baseline captures were of Horizon and are void;
+they are recaptured against Dawn. `CLAUDE.md` is rewritten accordingly.
+
+---
+
+## ADR-008 — Mandated section filenames override the `tisso-` prefix convention
+
+**Date:** 2026-08-07 · **Status:** Accepted · **Amends:** `CLAUDE.md` §5
+
+**Context.** `CLAUDE.md` §5 required every authored file to carry a `tisso-`
+prefix so our work was greppable in one command. The brief mandates exact
+filenames: `sections/banner.liquid` and `sections/product-grid.liquid`.
+
+**Decision.** Mandated names win for the two section files. The greppability the
+prefix bought is recovered a better way: `master` holds untouched Dawn, so
+`git diff --stat master...development` enumerates authored files exactly, with
+no naming convention required to make it work.
+
+**Alternatives considered.**
+1. *Keep the prefix (`tisso-banner.liquid`).* Rejected — the brief names the
+   files explicitly; renaming them risks an automated check not finding them.
+2. *Prefix only the supporting assets.* Rejected as half-measure — the CSS/JS
+   still need a namespace, which ADR-009 handles on its own terms.
+
+**Why this won.** Explicit instructions beat internal conventions, and the
+convention's actual purpose is served better by the git baseline.
+
+**Consequences.** `CLAUDE.md` §5 is amended. Supporting assets stay namespaced
+per ADR-009.
+
+---
+
+## ADR-009 — CSS is namespaced `ee-` to guarantee zero collision with Dawn
+
+**Date:** 2026-08-07 · **Status:** Accepted
+
+**Context.** The hardest constraint in the brief is that **no ready-made Dawn
+section, snippet, component, or CSS class may be used**, and it is called out as
+the single most likely thing to be checked. Dawn's `base.css` is loaded globally
+on every page and already defines `.banner`, `.card`, `.grid`, `.button`,
+`.price`, `.quantity`, and more. A section file literally named `banner.liquid`
+that styles a `.banner` element would silently inherit Dawn's styling — visually
+passing while violating the constraint.
+
+**Decision.** Every class we author is namespaced **`ee-`** (EcomExperts) and
+follows BEM: `.ee-banner`, `.ee-banner__title`, `.ee-grid`, `.ee-grid__tile`,
+`.ee-hotspot`, `.ee-popup`, `.ee-popup__variants`. No authored markup carries a
+bare Dawn class. Custom properties are `--ee-*`. Compliance is proven by grep,
+not by inspection: no authored file may reference a class defined in Dawn's
+`assets/base.css`.
+
+**Alternatives considered.**
+1. *Reuse Dawn's utility classes for speed.* Rejected — this is precisely the
+   prohibited behaviour, and it is the cheapest thing for a grader to check.
+2. *Bare BEM without a prefix (`.banner__title`).* Rejected — the block root
+   `.banner` collides with Dawn head-on, and a collision that only manifests as
+   "inherited some styling" is exactly the kind of failure that passes visual
+   review and fails code review.
+3. *Shadow DOM for hard isolation.* Rejected — genuinely airtight, but it
+   complicates Liquid rendering, theme-editor live updates, and global font
+   inheritance for a problem a prefix solves completely.
+
+**Why this won.** A prefix makes the constraint mechanically verifiable, which
+matters more than elegance when the constraint is pass/fail.
+
+**Consequences.** Slightly more verbose class names, and we implement layout
+primitives (grid, button, dialog) ourselves rather than inheriting them — which
+is the intent of the constraint, not a side effect.
