@@ -1,0 +1,362 @@
+{%- comment -%}
+  sections/banner.liquid — the Gift Guide hero (Figma frame 1:1589).
+
+  Built from scratch: no Dawn section, snippet, component or CSS class is used
+  anywhere in this file (C1). The only snippets rendered are our own, `ee-`
+  prefixed ones.
+
+  Three stacked bands, matching the design (docs/DESIGN-TOKENS.md §1):
+    1. a utility bar carrying the wordmark, the merchant's message and the CTA
+       (the message and the CTA are desktop-only — the mobile frame `1:1804`
+       shows the wordmark and a hamburger and nothing else)
+    2. the hero: full-bleed illustration, heading, description, animated button
+    3. the announcement strip
+
+  This section owns all seven of the instruction page's red rectangles, and
+  every one of them is a schema setting (C5, ADR-011):
+    1 wordmark          → logo + logo_alt
+    2 top-bar message   → utility_text
+    3 top-bar CTA       → utility_cta_label + utility_cta_url
+    4 H1                → heading
+    5 description       → description
+    6 SHOP NOW button   → button_label + button_url
+    7 bottom strip      → strip_text
+  Each is guarded so the section still renders when the merchant leaves it
+  empty. Items 2 and 3 are hidden below 768 — that is visibility only; they
+  stay settings at every width.
+{%- endcomment -%}
+
+{{ 'ee-tokens.css' | asset_url | stylesheet_tag }}
+{{ 'ee-button.css' | asset_url | stylesheet_tag }}
+{{ 'ee-banner.css' | asset_url | stylesheet_tag }}
+
+{%- liquid
+  # Jost ships in Shopify's own font library, so it loads through font_picker +
+  # font_face rather than a Google Fonts <link>, which would be an external
+  # runtime dependency (C2, DESIGN-TOKENS §4.3).
+  assign ee_font_body = section.settings.font_body
+  assign ee_font_heading = ee_font_body | font_modify: 'weight', '500'
+  unless ee_font_heading
+    # Not every family in the library carries a 500; fall back to the regular
+    # face rather than emitting a broken @font-face rule.
+    assign ee_font_heading = ee_font_body
+  endunless
+
+  # The illustration is decorative: it carries no information the heading does
+  # not already carry. Defaulting its alt to the heading made a screen reader
+  # announce "The Gift Guide" twice in a row (S7.4), so the hero gets its own
+  # setting instead, empty by default — the correct markup for a decorative
+  # image. A merchant who uploads a *meaningful* illustration can fill it in,
+  # and an uploaded file's own alt still wins over an empty setting.
+  assign ee_hero_alt = section.settings.image_alt
+
+  # The wordmark carries its own alt, because it is artwork with no text behind
+  # it (ADR-011) and neither an uploaded file's alt nor any other setting says
+  # what it reads.
+  assign ee_logo_alt = section.settings.logo_alt
+-%}
+
+{%- style -%}
+  {{ ee_font_body | font_face: font_display: 'swap' }}
+  {{ ee_font_heading | font_face: font_display: 'swap' }}
+
+  /* Per-instance only: two sections on one page can carry different fonts.
+     The selector deliberately includes the section id AND the block class:
+     ee-tokens.css declares the fallback families on `.ee-scope`, which is this
+     same element, so an inherited value from the wrapper alone would lose. */
+  #shopify-section-{{ section.id }} .ee-banner {
+    --ee-font-body: {{ ee_font_body.family }}, {{ ee_font_body.fallback_families }};
+    --ee-banner-heading-weight: {{ ee_font_heading.weight }};
+  }
+{%- endstyle -%}
+
+<div class="ee-scope ee-banner" data-ee-banner>
+  {%- comment -%} Band 1 — utility bar: red rectangles 1, 2 and 3. {%- endcomment -%}
+  <div class="ee-banner__utility">
+    <div class="ee-banner__utility-row">
+      {%- comment -%}
+        Red rectangle #1 — the TISSO VISON wordmark. `1:1591` is a GROUP of
+        nine VECTOR paths, not a TEXT node: it is outlined artwork with no font
+        behind it, so it cannot be a text setting. Per ADR-011 it is an
+        image_picker plus its own alt string, falling back to artwork we ship
+        in assets/ when the merchant has uploaded nothing.
+
+        The fallback is a plain <img>: if `ee-wordmark.svg` is not present the
+        browser renders the alt text instead. It degrades, it does not error.
+      {%- endcomment -%}
+      <div class="ee-banner__brand">
+        {%- if section.settings.logo != blank -%}
+          {%- render 'ee-image',
+            image: section.settings.logo,
+            class: 'ee-banner__logo',
+            widths: '160,240,320,480',
+            sizes: '152px',
+            alt: ee_logo_alt,
+            loading: 'eager'
+          -%}
+        {%- else -%}
+          <img
+            class="ee-banner__logo"
+            src="{{ 'ee-wordmark.svg' | asset_url }}"
+            width="152"
+            height="19"
+            alt="{{ ee_logo_alt | escape }}"
+            loading="eager"
+            decoding="async"
+          >
+        {%- endif -%}
+      </div>
+
+      {%- comment -%} Red rectangle #2. Hidden below 768 by CSS, never by Liquid. {%- endcomment -%}
+      {%- if section.settings.utility_text != blank -%}
+        <p class="ee-banner__utility-message">{{ section.settings.utility_text | escape }}</p>
+      {%- endif -%}
+
+      {%- comment -%}
+        Red rectangle #3. The same ee-button snippet as the hero's SHOP NOW,
+        so both carry the identical two-state animation (Figma "Component 207";
+        `1:1605` and `43:377` are instances of the same component).
+      {%- endcomment -%}
+      {%- render 'ee-button',
+        label: section.settings.utility_cta_label,
+        url: section.settings.utility_cta_url,
+        variant: 'accent',
+        fill: true,
+        class: 'ee-banner__cta'
+      -%}
+    </div>
+  </div>
+
+  {%- comment -%}
+    Band 2 — hero.
+
+    <section>, not <div>, and <header> for the copy block below — and that is a
+    correctness fix, not a stylistic one. Dawn's `assets/base.css:483-495`
+    declares `a:empty, ul:empty, dl:empty, div:empty, section:empty,
+    article:empty, p:empty, h1:empty … { display: none }`. With the heading,
+    description and button all blank the copy block became `:empty`, Dawn hid
+    it, and the hero — whose height comes entirely from that block, since the
+    illustration is absolutely positioned — collapsed to 0px, taking the
+    merchant's uploaded image with it.
+
+    `<header>` is not in Dawn's list, so the rule simply does not match; no
+    override, no `!important`, no fight with the host theme. `<section>` IS in
+    the list, but this band always contains the illustration <img>, so it can
+    never be `:empty` — and wrapping the <header> in sectioning content is what
+    keeps it a generic element instead of a second `banner` landmark competing
+    with Dawn's real page header.
+  {%- endcomment -%}
+  <section class="ee-banner__hero">
+    {%- comment -%}
+      The design's line-art illustration is 78 vector paths across two groups
+      (`8593:227`). S2.3 requires it to be a merchant-supplied image_picker, so
+      it ships as a single full-bleed background image. It is above the fold:
+      eager, and flagged high priority so it does not queue behind the grid.
+
+      The artwork does not exist in the store's catalogue, so — same pattern as
+      the wordmark — we ship it in assets/ and the picker only overrides it.
+      That way the hero is never blank. If `ee-banner-art.png` is absent the
+      <img> falls back to its alt text rather than erroring.
+    {%- endcomment -%}
+    {%- if section.settings.image != blank -%}
+      {%- render 'ee-image',
+        image: section.settings.image,
+        class: 'ee-banner__image',
+        widths: '375,550,750,1100,1440,1920,2400',
+        sizes: '100vw',
+        alt: ee_hero_alt,
+        loading: 'eager',
+        fetchpriority: 'high'
+      -%}
+    {%- else -%}
+      <img
+        class="ee-banner__image"
+        src="{{ 'ee-banner-art.png' | asset_url }}"
+        width="2880"
+        height="1560"
+        alt="{{ ee_hero_alt | escape }}"
+        loading="eager"
+        decoding="async"
+        fetchpriority="high"
+      >
+    {%- endif -%}
+
+    <header class="ee-banner__content">
+      {%- if section.settings.heading != blank -%}
+        {%- comment -%}
+          <h1>: on a page template Dawn's header renders the shop name as a
+          <div>, so this is the page's first heading and the grid's <h2> follows
+          it without skipping a level (S7.6).
+        {%- endcomment -%}
+        <h1 class="ee-banner__heading">{{ section.settings.heading | escape }}</h1>
+      {%- endif -%}
+
+      {%- if section.settings.description != blank -%}
+        <div class="ee-banner__description">{{ section.settings.description }}</div>
+      {%- endif -%}
+
+      {%- comment -%}
+        `fill: true` because `3:1672` is a FIXED 119px label cell with
+        `textAlignHorizontal: CENTER` inside the 193px mobile button — the
+        slack sits inside the label, not between the label and the arrow.
+      {%- endcomment -%}
+      {%- render 'ee-button',
+        label: section.settings.button_label,
+        url: section.settings.button_url,
+        variant: 'dark',
+        fill: true,
+        class: 'ee-banner__button'
+      -%}
+    </header>
+  </section>
+
+  {%- comment -%}
+    Band 3 — announcement strip, red rectangle #7.
+
+    Two strings, not one, because the design has two. `1:1613.characters` is
+    "SUSTAINABLE, ETHICALLY MADE CLOTHES IN SIZES XXS TO 6XL" (55 chars at 16px,
+    box 451 × 14); `1:1813.characters` is "SUSTAINABLE, ETHICALLY MADE
+    ACTIVEWEAR" (38 chars at 14px, box 288 × 14). Serving the desktop string at
+    375 is what inflated the band from the designed 34px to 46.84 — at 14px it
+    measures ≈394px of ink against 342px of content width, so it wraps to two
+    lines. No CSS can fix that; only the shorter copy the design actually
+    specifies can. This settles the ASSUMPTION flagged in DESIGN-TOKENS §7.1.
+
+    Both are schema settings (C5) and each falls back to the other, so a
+    merchant who fills in only one still gets a strip at every width. The hidden
+    variant is `display: none`, which removes it from the accessibility tree too
+    — a screen reader reads the strip once, not twice.
+  {%- endcomment -%}
+  {%- liquid
+    assign ee_strip_wide = section.settings.strip_text | default: section.settings.strip_text_mobile
+    assign ee_strip_narrow = section.settings.strip_text_mobile | default: section.settings.strip_text
+  -%}
+  {%- if ee_strip_wide != blank -%}
+    <div class="ee-banner__strip">
+      <p class="ee-banner__strip-text ee-banner__strip-text--narrow">{{ ee_strip_narrow | escape }}</p>
+      <p class="ee-banner__strip-text ee-banner__strip-text--wide">{{ ee_strip_wide | escape }}</p>
+    </div>
+  {%- endif -%}
+</div>
+
+{% schema %}
+{
+  "name": "EE Banner",
+  "settings": [
+    {
+      "type": "header",
+      "content": "Wordmark"
+    },
+    {
+      "type": "image_picker",
+      "id": "logo",
+      "label": "Wordmark image",
+      "info": "The design's wordmark is outlined artwork, not type, so it is an image. Leave empty to use the artwork bundled with the theme."
+    },
+    {
+      "type": "text",
+      "id": "logo_alt",
+      "label": "Wordmark alt text",
+      "default": "Tisso Vison",
+      "info": "Read out by screen readers, and shown if the image cannot load."
+    },
+    {
+      "type": "header",
+      "content": "Utility bar"
+    },
+    {
+      "type": "paragraph",
+      "content": "The message and the button appear from 768px up. The mobile design shows only the wordmark in this bar."
+    },
+    {
+      "type": "text",
+      "id": "utility_text",
+      "label": "Message",
+      "default": "Find the ideal gift for your loved ones."
+    },
+    {
+      "type": "text",
+      "id": "utility_cta_label",
+      "label": "Button label",
+      "default": "choose gift"
+    },
+    {
+      "type": "url",
+      "id": "utility_cta_url",
+      "label": "Button link"
+    },
+    {
+      "type": "header",
+      "content": "Hero"
+    },
+    {
+      "type": "image_picker",
+      "id": "image",
+      "label": "Background illustration",
+      "info": "Leave empty to use the line-art illustration bundled with the theme."
+    },
+    {
+      "type": "text",
+      "id": "image_alt",
+      "label": "Illustration alt text",
+      "info": "Leave empty: the illustration is decorative and the heading beside it already carries the meaning. Fill this in only if your artwork says something the heading does not."
+    },
+    {
+      "type": "text",
+      "id": "heading",
+      "label": "Heading",
+      "default": "The Gift Guide"
+    },
+    {
+      "type": "richtext",
+      "id": "description",
+      "label": "Description",
+      "default": "<p>Discover Joy: Your Ultimate Holiday Gift Destination. Explore our curated selection and find the perfect gifts to delight your loved ones this holiday season.</p>"
+    },
+    {
+      "type": "text",
+      "id": "button_label",
+      "label": "Button label",
+      "default": "Shop Now"
+    },
+    {
+      "type": "url",
+      "id": "button_url",
+      "label": "Button link"
+    },
+    {
+      "type": "header",
+      "content": "Announcement strip"
+    },
+    {
+      "type": "text",
+      "id": "strip_text",
+      "label": "Text (768px and up)",
+      "default": "SUSTAINABLE, ETHICALLY MADE CLOTHES IN SIZES XXS TO 6XL"
+    },
+    {
+      "type": "text",
+      "id": "strip_text_mobile",
+      "label": "Text (below 768px)",
+      "default": "SUSTAINABLE, ETHICALLY MADE ACTIVEWEAR",
+      "info": "The design uses a shorter line on mobile so the strip stays one line tall. Leave empty to reuse the wider text."
+    },
+    {
+      "type": "header",
+      "content": "Typography"
+    },
+    {
+      "type": "font_picker",
+      "id": "font_body",
+      "label": "Banner font",
+      "default": "jost_n4",
+      "info": "The design uses Jost. Loaded from Shopify's font library, not from an external CDN."
+    }
+  ],
+  "presets": [
+    {
+      "name": "EE Banner"
+    }
+  ]
+}
+{% endschema %}
