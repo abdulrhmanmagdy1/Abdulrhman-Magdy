@@ -40,12 +40,32 @@
     Captured once so the <a> and <button> branches cannot drift apart.
     The arrow is an inline SVG stroked with currentColor, which is what makes
     the colour flip carry the arrow as well as the label (DESIGN-TOKENS §3.5).
-    The shaft is 1px and the head occupies the last 8px, per the native render.
+
+    Three things about this SVG are load-bearing, because four callers share it
+    and each one gives it a DIFFERENT box:
+
+      caller                     Figma node               drawn width
+      utility-bar CTA            I1:1605;358:2736         24
+      hero CTA (desktop)         3:1206 internals         25.49
+      hero CTA (mobile)          3:1673                   24
+      popup ADD TO CART          43:379                   33.699
+
+    1. The path spans the viewBox EXACTLY (x 0 → 26). It used to stop at 24 of
+       26, which left 2 units of dead space no caller could see or use.
+    2. `preserveAspectRatio="none"`. Every one of those Figma nodes is a "Line
+       15" — a horizontal rule with a height of ~0 — so the only dimension the
+       design specifies is the WIDTH, and each caller sets it in CSS. The
+       default `xMidYMid meet` ignores that width whenever the box is wider than
+       12:26, which is why the popup's 33.7px box was drawing a 26px arrow
+       centred inside it. With `none` the ink is exactly the CSS box.
+    3. `vector-effect="non-scaling-stroke"` is the necessary companion: without
+       it, `none` would scale the stroke non-uniformly with the box, and
+       `strokeWeight` is 1.5 on every one of the four nodes above.
   {%- endcomment -%}
   {%- capture ee_btn_inner -%}
     <span class="ee-btn__label">{{ label | escape }}</span>
-    <svg class="ee-btn__icon" viewBox="0 0 26 12" fill="none" aria-hidden="true" focusable="false">
-      <path d="M0 6h24M16 1l8 5-8 5" stroke="currentColor" stroke-width="1" />
+    <svg class="ee-btn__icon" viewBox="0 0 26 12" fill="none" preserveAspectRatio="none" aria-hidden="true" focusable="false">
+      <path d="M0 6h26M18 1l8 5-8 5" stroke="currentColor" stroke-width="1.5" vector-effect="non-scaling-stroke" />
     </svg>
   {%- endcapture -%}
 

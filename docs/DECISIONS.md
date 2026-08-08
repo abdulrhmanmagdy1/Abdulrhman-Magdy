@@ -585,6 +585,24 @@ property of the page. Only one of those is under our control.
 (anchoring the three colliding rules) is already in place; the single-include
 change is routed to the section that owns the second emission.
 
+**Corrected 2026-08-08 — the stated decision is not what the page emits.** This
+ADR claims a shared stylesheet is "emitted once, by the first section that needs
+it". It is not: `banner.liquid` emits `ee-button.css`, then `product-grid.liquid`
+emits it again, after `ee-banner.css`. A later builder proved elimination is not
+cleanly possible (Liquid `increment` is isolated inside `{% render %}`, and
+emitting only from the banner breaks any template carrying the grid without it),
+and measured that two `<link>` tags produce one network request — so the
+duplicate is **accepted**, and specificity remains the whole defence.
+
+That is not a free trade, and the cost was real: `.ee-btn { margin: 0 }` has
+specificity (0,1,0), exactly tying `.ee-banner__button`. Loading second, it won,
+and **every `margin-top` on the banner CTA computed to `0px`** — silently
+destroying the desktop CTA's 46px gap and the mobile CTA's `margin-top: auto`.
+Both surfaced as design-audit FAILs whose apparent cause (wrong offsets) was two
+steps removed from the actual one. Any rule that must beat a shared component is
+therefore anchored on two classes as a matter of course, not only where a
+collision has already been observed.
+
 ---
 
 ## ADR-017 — Hotspot coordinates are `number`, not `range`; and the schema carries the cart rule as data
@@ -674,3 +692,77 @@ ceiling as a code defect would have sent a builder chasing an impossible target.
 **Consequences.** **Owner decision required:** re-upload the six product images
 at ≥1300px on the long edge to clear DPR 2, or accept slight softness on
 high-density desktop displays. Nothing in the theme changes either way.
+
+---
+
+## ADR-019 — The hero description, like the strip, is different copy per breakpoint
+
+**Date:** 2026-08-08 · **Status:** Accepted · **Extends:** ADR-015
+
+**Context.** The mobile hero description rendered 83.188px tall against
+`3:1670`'s 42.000 because the build reused the desktop copy. `3:1670.characters`
+is a **distinct 53-character string**: `Discover Joy: Your Ultimate Holiday Gift
+Destination.` — the desktop sentence's first clause with the second sentence
+dropped. It is authored copy, not a truncation.
+
+**Decision.** A `description_mobile` schema setting defaulting to
+`3:1670.characters`, with mutual fallbacks — the same shape ADR-015 established
+for the announcement strip.
+
+**Alternatives considered.** CSS truncation (rejected — silently hides merchant
+copy, and the mobile string is not a prefix of the desktop one in a way CSS could
+produce); one setting reflowed (rejected — measured at 2× the target height);
+hardcoding (rejected — red rectangle #5 must be customizer-editable).
+
+**Why this won.** Consistency with ADR-015, and it is the only option that
+reproduces both frames while keeping every user-visible string editable.
+
+**Consequences.** This is now a *pattern*, not a one-off: **assume Figma may
+carry different copy per breakpoint and check `characters` on both nodes** before
+assuming one responsive string. Two of the banner's seven regions turned out this
+way, and both were initially built wrong.
+
+---
+
+## ADR-020 — No claim is verified until it is reproduced on a published theme URL
+
+**Date:** 2026-08-08 · **Status:** Accepted · **Supersedes part of ADR-003**
+
+**Context.** The Phase 4 cart rule was reported as "proven from raw `/cart.js`:
+Black+M → 2 items, Black+L → 1, White+M → 1". The evidence was real, but it came
+from `shopify theme dev` on `127.0.0.1:9292`, which serves the **local working
+tree**. The published preview theme `#196660265126` had been pushed between
+commits `88727de` (grid) and `d035603` (popup), so `ee-popup.js` and
+`ee-popup.css` both returned **404** on it. The rendered page linked four `ee-`
+assets, not six. The markers rendered — "hotspot" appears 42 times — with no
+popup code behind them.
+
+The finding was not made by either verifying agent. Both were pointed at
+localhost, so both confirmed a surface no grader can reach.
+
+**Decision.** A SPEC line closes only on evidence from a **published theme URL**.
+Localhost is for the builder's own iteration. Concretely:
+1. Push the whole working tree — never hand-copy files — so the theme matches the
+   branch exactly.
+2. **Assert every authored asset returns 200 on the theme URL before testing
+   anything**, and record the status codes.
+3. Drive the real UI in a browser against that URL.
+
+**Alternatives considered.**
+1. *Keep verifying on localhost, spot-check production at the end.* Rejected —
+   that is what happened. A gap discovered at the end is discovered too late, and
+   the whole point of a deployed walking skeleton (ADR-006) was to retire exactly
+   this risk.
+2. *Diff local files against the theme via the API instead of testing the URL.*
+   Rejected — it proves the files match, not that the page works. The interesting
+   failures are integration failures.
+
+**Why this won.** "Green on localhost" and "green in production" are different
+claims, and only one of them is being graded. ADR-012 already made this argument
+about *design* values (verify against the source, not against notes); this
+extends the same rule to *behaviour*.
+
+**Consequences.** New SPEC assertions **S1.11** and **S1.12**. Every prior
+Phase 3/4 behavioural sign-off is downgraded to "verified on localhost" until
+re-confirmed against the published theme. The asset-200 check is cheap and is now
+the first step of any QA pass.

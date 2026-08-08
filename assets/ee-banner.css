@@ -219,6 +219,22 @@
   margin-top: 1em;
 }
 
+/* Two strings, not one reflowed string — the same finding ADR-015 settled for
+ * the announcement strip, and settled the same way. `3:1208.characters` is 155
+ * characters; `3:1670.characters` is a DIFFERENT 53-character sentence,
+ * "Discover Joy: Your Ultimate Holiday Gift Destination." — the desktop copy's
+ * first sentence with its second sentence dropped, not a truncation the browser
+ * could produce. `3:1670` is a 340 × 42 box, i.e. exactly two 20.8px lines;
+ * serving the desktop copy at 375 rendered four (83.19px) and pushed everything
+ * below it. Font-size and line-height are already exact and are untouched.
+ *
+ * Only one of the two is ever in the layout OR the accessibility tree, so a
+ * screen reader reads the description once. Anchored on `.ee-banner` for the
+ * same load-order reason as the CTA rules above. */
+.ee-banner .ee-banner__description--wide {
+  display: none;
+}
+
 .ee-banner__button {
   /* Mobile: `3:1671` is a 193 × 45 HORIZONTAL auto-layout, gap 10, padding
      13/20/13/20. Its label `3:1672` is a FIXED 119px cell with
@@ -226,16 +242,30 @@
      20 + 119/2. `space-between` with a natural-width label put it at 63.41
      (−16.09px): the slack belongs INSIDE the label cell, not between the label
      and the arrow. `ee-btn--fill` gives the label that cell, and the arithmetic
-     closes exactly: 20 + 119 + 10 + 24 + 20 = 193, arrow at 149 = `3:1673`.
-
-     margin-top:auto pins the button to the bottom of the hero, reproducing the
-     337px offset without hardcoding a magic gap that a longer description
-     would break. */
-  margin-top: auto;
+     closes exactly: 20 + 119 + 10 + 24 + 20 = 193, arrow at 149 = `3:1673`. */
   gap: 10px;
   min-width: 193px;
   height: 45px;
   padding: 0 20px;
+}
+
+/* Two classes, and for the third time in this file the reason is load order,
+ * not taste. `ee-button.css` is emitted a SECOND time by product-grid.liquid,
+ * after this sheet, and it declares `.ee-btn { margin: 0 }` — (0,1,0), the same
+ * weight as `.ee-banner__button`. The later copy therefore won and EVERY
+ * margin-top below silently computed to 0: the desktop CTA lost its 46px gap
+ * (`3:1206.y` 1136 → frame-local 739 against a description ending on 693) and
+ * the mobile CTA lost `margin-top: auto` entirely, which put it 150.81px above
+ * `3:1671`'s frame-local 402 instead of 39px clear of the hero's bottom edge.
+ * At (0,2,0) these cannot be undone by a duplicate include in any order.
+ *
+ * `auto` at ≤767 rather than a number: `3:1671` sits 39px above the hero's
+ * bottom (799 + 45 = 844 vs 462 + 421 = 883), which is exactly the content
+ * block's own padding-bottom, so pushing the button to the end of the flex
+ * column reproduces frame-local 402 without a magic gap that a longer
+ * description would break. */
+.ee-banner .ee-banner__button {
+  margin-top: auto;
 }
 
 /* `3:1672.fills[0]` and `3:1673.strokes[0]` are #F5F5F5 on the mobile frame,
@@ -344,16 +374,32 @@
     line-height: 24px; /* 1.4 */
   }
 
+  /* The 53-character mobile sentence belongs to the 375 frame only; from 768 up
+     there is room for `3:1208`'s full copy. */
+  .ee-banner .ee-banner__description--narrow {
+    display: none;
+  }
+
+  .ee-banner .ee-banner__description--wide {
+    display: block;
+  }
+
   .ee-banner__button {
     /* Desktop box from §3.3: 55 + label 86.83 + 29 + 26 + 24 = 220.83. The
        label cell is already its natural width here, so `ee-btn--fill` has no
        slack to distribute and the ink stays at button-local 55.00 — the fill
        modifier only does work at ≤767, where `3:1672` is a fixed 119px cell. */
-    margin-top: 40px;
     min-width: 220px;
     height: 50px;
     padding: 0 24px 0 55px;
     gap: 29px;
+  }
+
+  /* Interpolated, §8.1 — there is no tablet frame. `auto` is dropped here
+     because from 768 up the hero is taller than its copy by enough that
+     bottom-pinning would strand the button far below the description. */
+  .ee-banner .ee-banner__button {
+    margin-top: 40px;
   }
 
   /* `43:380.fills[0]` / `43:379.strokes[0]` — the real Component 207 instance
@@ -426,8 +472,13 @@
     line-height: 28px;
   }
 
-  .ee-banner__button {
-    margin-top: 50px;
+  /* `3:1206.absoluteBoundingBox` = (−807, 1136) → frame-local (68, 739) against
+     the desktop frame origin (−875, 397). `3:1208` ends at frame-local 609 + 84
+     = 693, so the design leaves a 46px gap between the copy and the button —
+     693 + 46 + 50 (button) + 51 (padding-bottom) = 840, i.e. 4px inside the
+     hero's 780 + 64 utility bar, so the gap costs nothing below it. */
+  .ee-banner .ee-banner__button {
+    margin-top: 46px;
   }
 
   .ee-banner__strip {

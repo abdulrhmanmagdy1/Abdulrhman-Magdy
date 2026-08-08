@@ -135,10 +135,14 @@
     {%- endcomment -%}
     <p class="ee-popup__status" data-ee-popup-status role="status" aria-live="polite"></p>
 
+    {%- comment -%}
+      No `fill:` here. `43:380` is a FIXED 103.907px centred cell, not a cell
+      that grows to fill the button, so `.ee-popup__submit .ee-btn__label` gives
+      it that exact width instead (assets/ee-popup.css).
+    {%- endcomment -%}
     {%- render 'ee-button',
       label: ee_popup_cta,
       variant: 'dark',
-      fill: true,
       class: 'ee-popup__submit'
     -%}
 

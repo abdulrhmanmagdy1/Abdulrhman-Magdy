@@ -38,8 +38,10 @@
      not in the §4.2 palette, so it is declared here rather than in
      ee-tokens.css, which this phase must not touch. */
   --ee-popup-label-color: #333333;
-  /* Stroke weight shared by the chip box (`103:185`) and the size box
-     (`116:954`): 0.5. */
+  /* Stroke weight shared by the size box (`116:954`) and the colour bars
+     (`103:151`): 0.5. The chip box (`103:153`) carries the same weight but
+     paints it as an inset shadow rather than a border — see `.ee-popup__chips`
+     for why the box model has to stay out of that one. */
   --ee-popup-hairline: 0.5px solid var(--ee-color-black);
 
   /* The element itself is the modal layer — full viewport, transparent, one
@@ -221,14 +223,25 @@
   font-size: 14px;
   line-height: 15.4px;
   letter-spacing: -0.14px; /* 43:359.style.letterSpacing */
-  /* The design's description box has 140 − (119 − 36) = 57px of room, i.e.
-     three 15.4px lines. Real catalogue descriptions are longer than the mock's,
-     so they are clamped rather than allowed to grow the popup past 447. The
-     full text stays in the DOM for assistive technology. */
+  /* FOUR lines, not three. `43:359.absoluteBoundingBox.height` is 60.000 with
+     `textAutoResize: HEIGHT` — the mock's own 98-character string sets four
+     lines at this width, and the previous 3-line clamp ellipsised the design's
+     own copy.
+
+     Four lines fit without moving anything below. The rhythm slot runs from the
+     description's top (119) to the "Color" label (186) = 67px, and 4 × 15.4 =
+     61.6. It overhangs `.ee-popup__head`'s fixed 140px box by 4.6px, which is
+     deliberate: that fixed height is what pins "Color" to 186 for every
+     product, and the overhang lands in the 10px of air below the head, not on
+     the label.
+
+     Still clamped, because a real catalogue description is longer than the
+     mock's and must not grow the popup past 447. The full text stays in the DOM
+     for assistive technology. */
   display: -webkit-box;
   -webkit-box-orient: vertical;
-  -webkit-line-clamp: 3;
-  line-clamp: 3;
+  -webkit-line-clamp: 4;
+  line-clamp: 4;
   overflow: hidden;
 }
 
@@ -281,23 +294,35 @@
      catalogue with more colours than the mock still renders. */
   grid-auto-flow: column;
   grid-auto-columns: minmax(0, 1fr);
-  min-height: 40.44px;
-  border: var(--ee-popup-hairline);
+  min-height: 40.441px; /* I103:185;103:153.height */
+
+  /* `103:153` is a 0.5 stroke with `strokeAlign: INSIDE` — it consumes no
+     layout box at all. An inset box-shadow reproduces that literally; a
+     `border` cannot, because Chrome floors a non-zero border to one device
+     pixel and then subtracts it from the content box. That subtraction is not
+     cosmetic here: it is what pushed the two colour bars off `103:151.x` 0 and
+     `103:152.x` 135.5 and made the halves 134.5 instead of 135.5. With the
+     outline out of the box model the grid columns land on 135.5 exactly and
+     every child offset below is a direct node reading. */
+  box-shadow: inset 0 0 0 0.5px var(--ee-color-black);
 }
 
 .ee-popup__chip {
-  position: relative; /* containing block for the visually hidden input */
+  /* Containing block for the visually hidden input and for the selection paint
+     below. `stretch`, not `center`: the colour bar spans the full height of the
+     box (`103:151.height` 40.441, i.e. the whole of `103:153`), so the half has
+     to be full height for the bar to fill it. */
+  position: relative;
   display: flex;
-  align-items: center;
+  align-items: stretch;
   min-width: 0;
   cursor: pointer;
 }
 
-/* The split between the halves. Only between, never on the outer edges, so the
-   box keeps the single 0.5px outline the node describes. */
-.ee-popup__chip + .ee-popup__chip {
-  border-left: var(--ee-popup-hairline);
-}
+/* No divider rule between the halves. The design has none: what reads as the
+   split in `103:185` is `103:152` itself — the SECOND value's colour bar, which
+   sits flush on the 135.5 half boundary. A `border-left` here drew a third line
+   the file does not contain and shifted the second half 1px right of it. */
 
 /* A real radio, kept in the accessibility tree and in the tab/arrow order —
    only its paint is replaced. */
@@ -314,25 +339,49 @@
 }
 
 .ee-popup__chip-body {
+  /* `position` so it is the containing block for the absolutely positioned
+     colour bar, and `z-index` so bar and label both paint ABOVE the selection
+     rectangle, which is an earlier positioned sibling (see below). */
+  position: relative;
+  z-index: 1;
   display: flex;
   align-items: center;
-  gap: 8px;
   width: 100%;
   min-width: 0;
-  /* Side padding is not carried by any node in `103:185`; 12px is ours and is
-     recorded as an assumption. */
-  padding: 0 12px;
+
+  /* The label inset IS carried by the file, per half:
+       `103:154.x` 980 − `103:153.x` 965                   = 15    (first half)
+       `103:155.x` 1114 − half boundary 1100.5             = 13.5  (second half)
+     The colour bar is out of flow, so this padding alone places the label —
+     there is no bar width or gap in the arithmetic. Right padding is ours: it
+     is only the ellipsis threshold for a colour name longer than the mock's,
+     and no node measures it. */
+  padding: 0 12px 0 15px;
 }
 
-/* The colour bar at the left of each half: `103:151` (5.81 wide, white with a
-   stroke) and `103:152` (4.84 wide, #000000). One 5.81px bar is used for every
-   value, with the hairline that `103:151` carries so a white swatch is still
-   visible on white. Its height is not in the file — 18px matches the label. */
+.ee-popup__chip + .ee-popup__chip .ee-popup__chip-body {
+  padding-left: 13.5px;
+}
+
+/* The colour bar at the left of each half: `103:151` (5.81 × 40.441 at half-
+   local 0) and `103:152` (4.84 × 39.632, also at half-local 0 — which is the
+   135.5 boundary). It is a full-height vertical bar, not a chip-sized square:
+   every variant in all three component sets (`77:198`/`77:199`,
+   `103:87`/`103:88`, `103:95`/`103:96`) carries the same 40.441 height.
+
+   Absolutely positioned rather than laid out, because at half-local 0 it sits
+   under the box outline and outside any padding the label needs. One 5.81px
+   width (`103:151`) is used for every value; `103:152` is 4.84, a 0.97
+   hand-drawn difference the file does not turn into a rule. The 0.5 stroke is
+   `103:151.strokeWeight`, and it is what keeps a white swatch visible on
+   white. */
 .ee-popup__swatch {
-  flex: none;
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
   width: 5.81px;
-  height: 18px;
-  border: 0.5px solid var(--ee-color-black);
+  border: var(--ee-popup-hairline);
   background: var(--ee-chip-swatch, transparent);
 }
 
@@ -347,17 +396,43 @@
   white-space: nowrap;
 }
 
-/* Selection. The only evidence in the file for a selected option is
-   `116:532`'s second variant — solid #000000 with a #FFFFFF label — so that is
-   what a chosen chip does. Set from JS as an attribute rather than relying on
-   :has(), so the state is explicit in the DOM for QA. */
+/* Selection. Four nodes describe it explicitly — `77:210` / `103:97` (first
+   half chosen) and `77:206` / `103:89` (second half chosen). All four are a
+   131 × 40 rectangle called "Rectangle 26170", filled #000000, and NOT the
+   whole half: at half-local x 5 in the first half and at half-local 4.5 in the
+   second (box-local 140, i.e. flush with the box's right edge at 271). The
+   label flips to #FFFFFF (`77:212` / `77:202`); the colour bar's stroke does
+   NOT flip — `77:208` keeps `#000000` — and now that the rectangle no longer
+   covers the bar, that matters: a white stroke would erase a white swatch.
+
+   Painted as a pseudo-element rather than as the half's background, so the
+   131 × 40 box is real geometry instead of an approximation of it. Set from JS
+   as an attribute rather than via :has(), so the state is explicit in the DOM
+   for QA. */
 .ee-popup__chip[data-ee-selected="true"] {
-  background: var(--ee-color-black);
   color: var(--ee-color-white);
 }
 
-.ee-popup__chip[data-ee-selected="true"] .ee-popup__swatch {
-  border-color: var(--ee-color-white);
+.ee-popup__chip[data-ee-selected="true"]::before {
+  content: "";
+  position: absolute;
+  top: 0; /* 77:210.y 679 − 77:211.y 679.04 */
+  left: 5px; /* 77:210.x 1948 − 77:211.x 1943 */
+  width: 131px;
+  /* Never wider than the half it belongs to. Inert at every mandated width —
+     the half is 135.5 there — and the only thing standing between a 288px
+     dialog at 320 and a rectangle painted across its neighbour. */
+  max-width: 100%;
+  height: 40px;
+  background: var(--ee-color-black);
+}
+
+/* `77:206` pins the last half's rectangle to the box's right edge instead:
+   box-local 140 + 131 = 271. Expressed as `right: 0` so it stays exact however
+   many colours the catalogue returns. */
+.ee-popup__chip:last-child[data-ee-selected="true"]::before {
+  right: 0;
+  left: auto;
 }
 
 .ee-popup__chip-input:focus-visible ~ .ee-popup__chip-body {
@@ -455,26 +530,48 @@
    `width`, `height`, `padding`), and a rule that needs source order to win is a
    rule waiting to lose one (ADR-016). `.ee-btn.ee-popup__submit` wins on
    specificity in any order and against any number of copies. */
+/* `43:377` is a GROUP, not an auto-layout frame, so its two children are placed
+ * absolutely and the "padding" below is derived from them rather than declared
+ * by the design:
+ *
+ *   43:378  fill   965.000 … 1236.000   → button-local     0.000 … 271.000
+ *   43:380  label  1039.420 … 1143.327  → button-local    74.420 … 178.327
+ *   43:379  arrow  1171.409 … 1205.109  → button-local   206.409 … 240.109
+ *
+ * so the label cell starts 74.42 in and the arrow ends 30.891 short of the
+ * right edge. Those two numbers are the padding; `space-between` distributes
+ * the 28.082 that is left over.
+ */
 .ee-btn.ee-popup__submit {
   /* 377 (43:377.y) − 326.44 (size box bottom: 286 + 40.44) */
   margin-top: 50.56px;
   width: 271px; /* 43:377.width */
   max-width: 100%;
   height: 45px; /* 43:377.height */
-  padding: 0 20px;
+  padding: 0 30.891px 0 74.42px;
   justify-content: space-between;
 }
 
-/* `43:379` — the arrow is 33.7 wide with stroke weight 1.5 here, against the
-   26 × 12 / weight 1 the banner uses for the same component. Overriding the
-   geometry in this file keeps snippets/ee-button.liquid untouched and shared. */
-.ee-popup__submit .ee-btn__icon {
-  width: 33.7px;
-  height: 12px;
+/* `43:380` is a FIXED 103.907px cell with `textAlignHorizontal: CENTER` and
+ * `textAutoResize: HEIGHT`, so its ink centres on button-local 126.373 — 9.13px
+ * LEFT of the button's own centre. This is the same defect that was fixed on
+ * the mobile hero CTA's 119px cell (`3:1672`): the slack belongs inside the
+ * label cell, not between the label and the arrow. A cell of the design's own
+ * width is the whole fix, so the popup does not use `ee-btn--fill`. */
+.ee-popup__submit .ee-btn__label {
+  flex: none;
+  width: 103.907px;
+  text-align: center;
 }
 
-.ee-popup__submit .ee-btn__icon path {
-  stroke-width: 1.5;
+/* `43:379` — 33.699 wide, ending on 240.109. The snippet's arrow now draws its
+ * full viewBox with `preserveAspectRatio="none"`, so this box IS the ink: the
+ * old 26-unit path inside a 33.7px box was rendered 1:1 and centred, which cost
+ * 9.699px of width. Stroke weight comes from the snippet, which carries
+ * `43:379.strokeWeight` 1.5 for every caller now. */
+.ee-popup__submit .ee-btn__icon {
+  width: 33.699px;
+  height: 12px;
 }
 
 /* The button is disabled for the duration of the request (S5.9) and while the

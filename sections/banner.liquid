@@ -18,7 +18,7 @@
     2 top-bar message   → utility_text
     3 top-bar CTA       → utility_cta_label + utility_cta_url
     4 H1                → heading
-    5 description       → description
+    5 description       → description + description_mobile
     6 SHOP NOW button   → button_label + button_url
     7 bottom strip      → strip_text
   Each is guarded so the section still renders when the merchant leaves it
@@ -191,8 +191,24 @@
         <h1 class="ee-banner__heading">{{ section.settings.heading | escape }}</h1>
       {%- endif -%}
 
-      {%- if section.settings.description != blank -%}
-        <div class="ee-banner__description">{{ section.settings.description }}</div>
+      {%- comment -%}
+        Red rectangle #5 — two strings, not one. `3:1208.characters` (155 chars)
+        and `3:1670.characters` ("Discover Joy: Your Ultimate Holiday Gift
+        Destination.", 53 chars) are different copy, exactly as `1:1613` and
+        `1:1813` are for the strip. `3:1670` is a 340 × 42 box — two 20.8px
+        lines — and the desktop sentence rendered four at 375, which pushed the
+        SHOP NOW button 150.8px off `3:1671`. Same remedy as ADR-015: two
+        settings, each falling back to the other so a merchant who fills in only
+        one still gets a description at every width, and the hidden variant is
+        `display: none` so it leaves the accessibility tree with the layout.
+      {%- endcomment -%}
+      {%- liquid
+        assign ee_desc_wide = section.settings.description | default: section.settings.description_mobile
+        assign ee_desc_narrow = section.settings.description_mobile | default: section.settings.description
+      -%}
+      {%- if ee_desc_wide != blank -%}
+        <div class="ee-banner__description ee-banner__description--narrow">{{ ee_desc_narrow }}</div>
+        <div class="ee-banner__description ee-banner__description--wide">{{ ee_desc_wide }}</div>
       {%- endif -%}
 
       {%- comment -%}
@@ -310,8 +326,15 @@
     {
       "type": "richtext",
       "id": "description",
-      "label": "Description",
+      "label": "Description (768px and up)",
       "default": "<p>Discover Joy: Your Ultimate Holiday Gift Destination. Explore our curated selection and find the perfect gifts to delight your loved ones this holiday season.</p>"
+    },
+    {
+      "type": "richtext",
+      "id": "description_mobile",
+      "label": "Description (below 768px)",
+      "default": "<p>Discover Joy: Your Ultimate Holiday Gift Destination.</p>",
+      "info": "The design uses a shorter sentence on mobile so the description stays two lines tall and the button keeps its place. Leave empty to reuse the wider text."
     },
     {
       "type": "text",
