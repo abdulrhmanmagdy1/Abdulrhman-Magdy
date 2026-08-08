@@ -49,6 +49,8 @@ Verifier: **QA** = `qa-tester` · **DA** = `design-auditor` · **ORCH** = orches
 | S1.8 | The finished page is **visible live on the store** at a stated URL. | QA | [ ] |
 | S1.9 | Local `development` is pushed — a fresh clone of the public repo gets current project memory, not stale docs. | QA | [ ] |
 | S1.10 | Commit history reads as a deliberate narrative: small units, correct branch, messages explaining **why**. | ORCH | [ ] |
+| **S1.11** | **No phase closes on localhost evidence alone.** Every feature claim must be reproduced against a **published theme URL** (`?preview_theme_id=…` or the live theme). `shopify theme dev` on `127.0.0.1` serves the local working tree and proves nothing about what is deployed. *(ADR-020: the Phase 4 cart proof was gathered on localhost while `ee-popup.js` and `ee-popup.css` returned **404** on the published theme — the markers rendered with no popup code behind them, and neither verifying agent caught it because both were pointed at localhost.)* | QA | [ ] |
+| **S1.12** | **Every authored asset returns 200 on the theme URL, asserted before any behavioural test**, with the status codes recorded. A test run against a theme missing its JavaScript produces confident, meaningless results. | QA | [ ] |
 
 ---
 

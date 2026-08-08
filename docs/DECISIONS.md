@@ -565,9 +565,31 @@ cascade, and `.ee-btn { display: inline-flex }` outranked
 `.ee-banner__cta { display: none }`. The result was a real regression the harness
 caught: the CTA reappeared at 375 and pushed `scrollWidth` to **379 vs 375**.
 
-**Decision.** A shared stylesheet is emitted **once**. Rules that must win
-against a shared component are anchored on two classes
-(`.ee-banner .ee-btn--dark`), never on `!important` and never on source order.
+**Decision.** Rules that must win against a shared component are anchored on two
+classes (`.ee-banner .ee-btn--dark`), never on `!important` and never on source
+order.
+
+**CORRECTED 2026-08-08.** This ADR originally also decided that "a shared
+stylesheet is emitted **once**, by the first section that needs it." **That is
+not what the page emits, and the claim was never verified.** `ee-button.css` is
+still emitted twice — by `banner.liquid`, then again by `product-grid.liquid`
+after `ee-banner.css`. Leaving the false claim in place cost real time: a later
+builder trusted it while debugging two audit FAILs whose actual root cause was
+that very duplicate. `.ee-btn { margin: 0 }` has specificity (0,1,0) — exactly
+tying `.ee-banner__button` — so the later copy won and **every** CTA
+`margin-top` computed to `0px`, costing the desktop CTA its 46px gap and the
+mobile CTA its `margin-top: auto` entirely.
+
+Single-emission was investigated and **rejected as infeasible**: Liquid's
+`increment` is isolated inside `{% render %}` (measured: 0 then 1, not 2);
+emitting only from `banner.liquid` breaks any template carrying the grid without
+the banner (the popup's ADD TO CART would lose its background, colour and
+animation); emitting from `layout/theme.liquid` edits a stock Dawn file and
+ships the rules store-wide; and duplicating the rules per section is the
+duplication this ADR exists to avoid. Measured cost of the duplicate: **2
+`<link>` tags → 1 network request → one 200.** So the decision is specificity
+alone, and the duplicate is accepted deliberately rather than tolerated
+silently.
 
 **Alternatives considered.**
 1. *`!important` on the banner rules.* Rejected outright — "never do this" #10,
@@ -766,3 +788,87 @@ extends the same rule to *behaviour*.
 Phase 3/4 behavioural sign-off is downgraded to "verified on localhost" until
 re-confirmed against the published theme. The asset-200 check is cheap and is now
 the first step of any QA pass.
+
+---
+
+## ADR-019 — The hero description, like the strip, is different copy per breakpoint
+
+**Date:** 2026-08-08 · **Status:** Accepted · **Extends:** ADR-015
+
+**Context.** The mobile hero description rendered **83.188px** tall against
+`3:1670`'s **42.000**. The build was reusing the desktop copy at mobile. The
+cause is the same one ADR-015 found in the announcement strip:
+`3:1670.characters` is a **distinct 53-character string** —
+`Discover Joy: Your Ultimate Holiday Gift Destination.` — which is the desktop
+sentence's *first clause with the second sentence dropped*, not a truncation and
+not a reflow.
+
+**Decision.** A `description_mobile` schema setting defaulting to
+`3:1670.characters`, with mutual fallbacks so blanking either still renders.
+Font-size and line-height were already exact and were not touched.
+
+**Alternatives considered.**
+1. *One setting reflowed by CSS.* Rejected — measured at 83.188 vs 42; the
+   second sentence physically cannot fit the box.
+2. *CSS truncation / line-clamp of the desktop string.* Rejected — it would end
+   mid-sentence, where the design ends cleanly at a full stop.
+3. *Hardcode the mobile string.* Rejected — the description is red rectangle #5
+   and must be customizer-editable.
+
+**Why this won.** It reproduces both frames exactly while keeping every
+user-visible string merchant-editable.
+
+**Consequences.** Two of the seven red-rectangle regions now carry a per-breakpoint
+pair. That this pattern appeared twice suggests checking any remaining text node
+whose mobile box is materially shorter than its desktop counterpart before
+assuming a reflow.
+
+---
+
+## ADR-021 — The auto-add rule cannot recurse, and the reason is not the one that looks obvious
+
+**Date:** 2026-08-08 · **Status:** Accepted
+
+**Context.** The Black+M rule adds `dark-winter-jacket`. If the auto-added line
+itself satisfied Black+M, a naive implementation would re-trigger and loop.
+Checked against the live catalogue rather than assumed:
+
+```
+dark-winter-jacket — options: Size=XS/S/M/L  Color=Black/White
+  56910581629094  M / Black   available: true      ← the dangerous combination EXISTS
+  56910581498022  XS / Black  available: true      ← first available
+```
+
+**So the risk is real in the data.** A build that auto-added `M / Black` would
+be adding a line that satisfies its own trigger condition.
+
+**Decision.** Three independent guards, in order of how load-bearing they are:
+
+1. **Structural — one request.** Both lines go in a single `/cart/add.js`
+   `items` array. The rule is evaluated **once**, against the shopper's
+   selection, and the appended line is never fed back through it. Verified on
+   the published theme by instrumenting `window.fetch`: exactly **one** call.
+   This holds no matter which variant is auto-added.
+2. **Incidental — first available is `XS / Black`.** `56910581498022` does not
+   satisfy Black+M. Confirmed on the published theme: the auto-added line was
+   `XS / Black` and `item_count` was exactly **2**, not 3+.
+3. **Explicit — a self-add guard** returning `null` when the shopper's selection
+   *is* the bonus variant.
+
+**Why the ordering matters.** Guard 2 is the one that looks reassuring and is
+the one that could silently disappear: if `XS / Black` ever sold out, "first
+available" would walk to `S / Black`, and if enough sold out it would reach
+`M / Black`. **Relying on it would be relying on inventory.** Guard 1 is what
+actually makes recursion impossible, and it holds under any catalogue state.
+
+**Alternatives considered.**
+1. *Two sequential `/cart/add.js` calls with a re-entrancy flag.* Rejected — it
+   makes recursion a thing prevented by a flag someone can remove, rather than
+   a thing the shape of the request forbids.
+2. *Excluding the bonus product from the rule by handle.* Rejected as the
+   primary guard — it only covers this one product; guard 1 covers all cases.
+
+**Consequences.** If the auto-add product is ever changed to one whose first
+available variant *does* satisfy the trigger, the cart would receive that line
+once — correct behaviour, not a loop. Recorded so a future editor does not
+"simplify" the single-request design into two calls.
