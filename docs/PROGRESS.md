@@ -398,3 +398,60 @@ session.
 **Notes:** **Phase 1 has exactly one item left: SPEC S1.6**, the Shopify GitHub
 integration, which no CLI surface exposes and which needs a human in the admin.
 Everything else in Phase 1 is closed.
+
+---
+
+## [2026-08-08] P3/P4 — Walking skeleton built, independently rejected twice, popup + cart built
+
+**Done:** Built `sections/banner.liquid` and `sections/product-grid.liquid`, exported
+the two real assets from Figma (`assets/ee-wordmark.svg` from `1:1591`,
+`assets/ee-banner-art.png` from `8593:227`), stood the page up on preview theme
+**#196660265126**, and built the Phase 4 popup + Ajax cart.
+
+**Verification — both independent agents REJECTED, and both found the same
+architectural hole from different directions.**
+
+`design-auditor` → **FAIL, 11 findings.** `qa-tester` → **REJECT, 3 MAJOR + 7 MINOR.**
+
+The convergent finding is the important one, and it is recorded as **ADR-014**:
+**ADR-009's `ee-` namespace stops class *collisions* and does nothing about
+Dawn's *inherited* and *element-level* styles.** Three separate leaks were
+measured, none of which a class-name grep could ever have caught:
+
+1. `base.css:258` `body { letter-spacing: 0.06rem }` inherited into our text
+   against Figma's `letterSpacing: 0` — **+24.00px** of ink on the utility
+   message, **+33.00px** on the strip. Diagnosed by counterfactual: forcing
+   `letter-spacing: 0` snapped both inside ±1px of their Figma boxes.
+2. `base.css:486` `div:empty { display: none }` — with the banner's text settings
+   blank, `.ee-banner__content` became `:empty`, so `.ee-banner__hero` measured
+   **1440×0** and the merchant's hero image vanished entirely.
+3. Our CSS had **no wrap policy at all**; headings only survived a 55-char
+   unbreakable token because *Dawn* sets `word-break: break-word` on h1–h6.
+
+SPEC S8.2 is therefore amended: isolation must be proven by **computed style**
+against the Figma node, not by grep. The grep assertion passed cleanly the entire
+time Dawn was restyling our text.
+
+**Two further convergences worth recording:** QA measured hero copy printed on the
+line-art at 768/375 at **1.0:1 contrast** (darkest background pixel luma 0), while
+the auditor independently found the build makes the art full-bleed 375×421 where
+`3:1630` is a **686×264 band that does not sit behind the copy**. One fidelity fix
+resolves both. And both agents independently hit Figma's
+`absoluteBoundingBox.height` **ceil** artefact — the cause of the 14-vs-13.424 and
+29-vs-28.8 errors — confirming the rule: read `style.lineHeightPx`, never a box.
+
+**What held, measured against the running page:** grid geometry exact to Δ 0.00
+(`433px 433px 433px`, gaps 20.00, frame 1339.00×908.00, aspect 0.975225 vs
+0.975225); **all 36 hotspot readings within 0.008pp** — 0.035px on a 433px tile;
+the button animation exact including the `#FFF544` overlay and
+`rgba(0,0,0,0.2) 0 2px 2px` shadow; six products resolved by handle with zero
+title lookups; zero Dawn snippets or classes; zero overflow at eight widths;
+CLS 0.0022.
+
+**Decisions recorded:** ADR-013 (Dawn chrome out of scope — the displacement is a
+pure uniform translation, so once normalised every frame-relative y lands within
+0.20px; suppressing it would require a forbidden `layout/theme.liquid` edit and
+would delete the mobile hamburger the design asks for), ADR-014 (above).
+
+**Notes:** Two fix agents are running on locked, disjoint file sets. Nothing is
+committed — three rejections, all from agents that did not write the code.

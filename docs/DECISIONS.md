@@ -347,3 +347,157 @@ declares only `text` and `link` as block settings, and the Liquid reads only
 `block.settings.text` / `block.settings.link`. The removed keys were stale, with
 no schema behind them. Recorded here so a future reviewer does not mistake them
 for tampering.
+
+---
+
+## ADR-011 — The seven red rectangles, and how the wordmark becomes editable
+
+**Date:** 2026-08-07 · **Status:** Accepted
+
+**Context.** The official instruction page (read directly, not summarised) shows
+an annotated banner with **seven** red rectangles, all of which "should be
+editable from the customizer": (1) TISSO VISON wordmark, (2) top-bar message,
+(3) CHOOSE GIFT CTA, (4) The Gift Guide H1, (5) description, (6) SHOP NOW button,
+(7) the bottom strip. Figma node `1:1591` shows the wordmark is a **group of
+vector paths**, not a TEXT node — it is outlined artwork with no font behind it.
+
+**Decision.** Six of the seven become `text`/`url` schema settings in
+`banner.liquid`. The wordmark becomes an **`image_picker` + a text `alt`
+setting**, defaulting to a bundled SVG in `assets/`, rendered via `asset_url`
+when the picker is empty.
+
+**Alternatives considered.**
+1. *Make the wordmark a text setting styled to look like the logo.* Rejected —
+   there is no font that reproduces it; `1:1591` is outlines. It would not be
+   pixel perfect, which is the graded criterion.
+2. *Hardcode the wordmark as an inline SVG.* Rejected — the instruction says all
+   seven are editable from the customizer. Hardcoding fails that explicitly.
+3. *Leave it to Dawn's header.* Rejected — C1 forbids reusing Dawn components,
+   and the annotation places the wordmark inside the banner's red-rectangle set.
+
+**Why this won.** An image picker is the only control that is both genuinely
+merchant-editable and capable of reproducing outlined artwork exactly.
+
+**Consequences.** Items 2 and 3 (top-bar message and CTA) are **hidden at mobile**
+— the mobile frame `1:1802` shows only a hamburger and the wordmark. They remain
+schema settings; only their visibility is breakpoint-dependent. The banner
+line-art illustration is likewise a real asset that does **not** exist in the
+store's catalogue and must ship in `assets/` with an `image_picker` override.
+
+---
+
+## ADR-012 — Verify against a cached Figma document, not against notes
+
+**Date:** 2026-08-07 · **Status:** Accepted
+
+**Context.** The MCP server's Starter-plan cap (~6–12 calls) made re-verification
+prohibitively expensive, which is exactly how three wrong values — the popup
+control structure, the hotspot disc fill, and a 36-vs-40 heading — survived into
+`docs/DESIGN-TOKENS.md` as confident-sounding prose. The REST API has a separate
+quota and returns `absoluteBoundingBox`, `style`, `fills`, `effects` directly.
+
+**Decision.** Cache Figma subtrees once into `qa/figma/*.json` (gitignored) and
+verify every built component against **the cache**, never against notes or a
+downscaled PNG. Every value in `SPEC.md` / `DECISIONS.md` / `DESIGN-TOKENS.md`
+cites `node-id.field`. A number with no citation is treated as unverified.
+Tolerances: geometry ±1px at 1440, font-size and line-height **exact**, colour
+**exact hex**. Outside tolerance is a REJECT, not a note.
+
+**Alternatives considered.**
+1. *Keep using the MCP.* Rejected — the quota is exhausted and is the root cause
+   of the errors above.
+2. *Measure the rendered PNGs.* Rejected as primary — `design-reference/desktop.png`
+   is a 0.72× downscale, and the supplied `mobile.png` is 256px wide. Fine as a
+   cross-check, useless as a source of truth.
+3. *Trust the first extraction.* Rejected — three of its values were wrong.
+
+**Why this won.** It makes re-verification nearly free, which removes the only
+real excuse for skipping it, and it makes every claim traceable to a node id.
+
+**Consequences.** The token is passed only as an environment variable and never
+written to the repo; `qa/figma/`, `*.figma.json`, `figma-token*`, and `.env*` are
+gitignored. **The token must be rotated after submission** — it appeared in the
+working transcript.
+
+---
+
+## ADR-013 — Dawn's header/footer chrome is out of scope; do not suppress it
+
+**Date:** 2026-08-08 · **Status:** Accepted
+
+**Context.** Figma frame `1:1588` begins directly with our utility bar at y=0.
+The rendered page carries Dawn's announcement bar + header above it (**124px at
+1440, 123px at 768, 135px at 375**) and Dawn's footer below (294.78 / 292.19 /
+253.17). So the page shows Dawn's nav *and* our utility bar — a doubling the
+design does not have, and every element below is displaced.
+
+**Decision.** Treat theme chrome as out of scope. Do not suppress it. Audit
+fidelity is measured **frame-relative** (`frameY = pageY − bannerTop`).
+
+**Alternatives considered.**
+1. *Suppress the header/footer section groups.* Rejected on three grounds. The
+   displacement is a **pure uniform translation** — the `design-auditor` measured
+   that once normalised, *every* frame-relative y lands within **0.20px** of
+   Figma, so the chrome costs **0.00px of intra-section fidelity**. Suppression
+   would require editing `layout/theme.liquid`, which "never do this" #11
+   forbids without cause. And it would delete the page's only navigation,
+   including the hamburger the mobile design actually asks for
+   (`I1:1804;484:8805`) — which our two sections cannot render, because C4 caps
+   us at exactly two sections.
+2. *A separate `layout/gift-guide.liquid` via `{% layout %}`.* Held in reserve.
+   If the owner overrules this ADR, this is the cheapest correct form: it adds a
+   new file and leaves `theme.liquid` untouched.
+3. *Rebuild the header inside `banner.liquid`.* Rejected — it would duplicate
+   navigation the theme already provides, and the brief asks for a page composed
+   of two sections, not a theme replacement.
+
+**Why this won.** The measurement settles it: fidelity inside our sections is
+unaffected, and the alternatives all cost either a forbidden edit or the loss of
+working navigation.
+
+**Consequences.** All design-audit deltas are reported frame-relative. A grader
+comparing a full-page screenshot to the Figma frame will see the chrome; the
+report states why it is there.
+
+---
+
+## ADR-014 — Dawn's *inherited* styles leak even when no class name collides
+
+**Date:** 2026-08-08 · **Status:** Accepted · **Extends:** ADR-009
+
+**Context.** ADR-009 namespaced every authored class `ee-` so nothing could
+collide with Dawn's `base.css`. That is necessary and it worked — the
+`design-auditor` confirmed zero class collisions. It is **not sufficient**.
+`assets/base.css:258` sets `body { letter-spacing: 0.06rem }`, which **inherits
+into our sections regardless of class names**. Figma specifies
+`letterSpacing: 0` on `1:1604`, `1:1613`, and `3:1208`. The leak added
+**+0.6px per character** — **+24.00px** of ink on the utility message and
+**+33.00px** on the strip, and it was the root cause of 3 of the 11 audit FAILs.
+
+Diagnosed by counterfactual, not inference: forcing `letter-spacing: 0` moved the
+utility-message ink to 259.55 against a `1:1604` box of 260 (Δ −0.45) and the
+strip to 450.13 against `1:1613`'s 451 (Δ −0.87). Both snapped inside ±1px.
+
+**Decision.** `.ee-scope` explicitly resets every **inheritable** property Dawn
+sets globally — `letter-spacing`, and any of `font-family`, `line-height`,
+`color`, `text-transform`, `word-spacing`, `font-weight` that `body`/`:root`
+touch — rather than only avoiding class collisions. Compliance is verified by
+reading `getComputedStyle` on our elements, not by reading our own CSS.
+
+**Alternatives considered.**
+1. *Override per element as each leak is discovered.* Rejected — that is how
+   this one survived to the audit. It treats symptoms and guarantees the next
+   inherited property leaks silently.
+2. *`all: revert` / `all: initial` on `.ee-scope`.* Rejected — too blunt; it
+   would also discard the Shopify font-family plumbing we deliberately use, and
+   `initial` on `color` and `font-family` produces worse defaults than Dawn's.
+3. *Shadow DOM.* Rejected again, for ADR-009's reasons — it would genuinely
+   solve this, but breaks theme-editor live updates and Liquid rendering.
+
+**Why this won.** It closes the whole class of defect rather than one instance,
+and it keeps the verification honest: the check is on computed style, which is
+what actually reaches the user.
+
+**Consequences.** A "no Dawn classes" grep is necessary but **not** evidence of
+isolation. SPEC S8.2 is amended: isolation must be proven by computed-style
+comparison against the Figma node, not by grep alone.
