@@ -447,7 +447,19 @@ class EePopupElement extends HTMLElement {
         new CustomEvent('ee:cart:updated', { bubbles: true, detail: { items: (payload && payload.items) || [] } })
       );
     } catch (error) {
-      this.setStatus((error && error.message) || this.strings.error || '');
+      /* Two unrelated failures land here and they must not read alike to a
+         shopper. An HTTP error response was rethrown above already carrying
+         Shopify's own `description` — worth showing, because it says WHY the
+         add was rejected. A `fetch` that never completed (offline, DNS
+         failure, dropped connection) rejects with a `TypeError` whose message
+         is browser-internal developer text — `Failed to fetch` in Chrome,
+         `Load failed` in Safari — untranslated and meaningless in a
+         storefront. Branch on the type, never on that text: the text is
+         precisely the part that varies by browser. Any other unexpected throw
+         is treated the same way, since it is our bug, not the shopper's, and
+         the merchant string is the safe thing to show (S5.10). */
+      const message = error instanceof TypeError ? '' : (error && error.message) || '';
+      this.setStatus(message || this.strings.error || '');
     } finally {
       this.setPending(false);
     }
