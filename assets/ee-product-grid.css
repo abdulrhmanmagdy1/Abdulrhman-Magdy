@@ -1,0 +1,245 @@
+/* ==========================================================================
+ * ee-product-grid.css — sections/product-grid.liquid
+ *
+ * Sources: docs/DESIGN-TOKENS.md §2 (desktop 1440), §6.3–§6.6 (mobile 375),
+ * §8.1 (the interpolated 768 layout — no tablet frame exists in the file).
+ *
+ * Mobile-first. Breakpoints:
+ *   base   ≤ 767  → 2 × 3, 4px gutters, 16.5px page margin
+ *   ≥ 768         → 2 × 3, 10px gutters, 32px page margin (interpolated)
+ *   ≥ 1024        → 3 × 2, 20px gutters, 50.5px page margin
+ *
+ * Scoping: everything is rooted at `.ee-grid` / `.ee-hotspot`, classes only
+ * this section emits (ADR-009). Dawn's `.grid`, `.card` and `.price` are never
+ * touched.
+ * ========================================================================== */
+
+.ee-grid {
+  /* Disc diameter is fixed per breakpoint, not proportional: 22px on a 433px
+     tile desktop, 15.714px on a 169px tile mobile (§2.6). */
+  --ee-hotspot-size: 15.714px;
+
+  font-family: var(--ee-font-body);
+  color: var(--ee-color-black);
+  /* Top gap is the banner → grid distance (§6.3: 40px at 375). Bottom padding
+     is the distance from the grid to the frame bottom in the same frame. */
+  padding-block: 40px 24px;
+}
+
+.ee-grid__inner {
+  box-sizing: border-box;
+  max-width: 1440px;
+  margin-inline: auto;
+  padding-inline: 16.5px; /* §6.1 — 16.5 + 342 + 16.5 = 375 */
+  /* The tiles no longer clip (see .ee-grid__tile), so a 44 × 44 hit area on a
+     hotspot at X = 100 overhangs its tile by 22px. In the outer column at 375
+     that is 5.5px past the 16.5px page margin, and it measured as real document
+     overflow — scrollWidth 381 against innerWidth 375, which C8 forbids and the
+     harness fails on. Clipping here rather than on the tile costs nothing: this
+     box is already the full viewport width at 375 and at 1440, so the only
+     thing removed is the sliver that was off-screen anyway, while every tile's
+     target keeps the whole of its reachable area. At ≥768 the page margin (32,
+     then 50.5) already exceeds 22px, so nothing is ever clipped there.
+
+     `clip`, not `hidden`: `hidden` would make this a scroll container, which
+     forces the other axis to `auto` and would clip the popup — `clip` clips
+     without scrolling and legally pairs with `overflow-y: visible`. */
+  overflow-x: clip;
+}
+
+.ee-grid__heading {
+  margin: 0 0 20px; /* §6.3 heading → grid */
+  /* Lustria, not Jost — `1:1663.style.fontFamily`. The @font-face that backs
+     this stack is declared in product-grid.liquid, where asset_url exists. */
+  font-family: var(--ee-font-heading);
+  font-weight: 400; /* 1:1663.style.fontWeight */
+  font-size: 24px; /* 1:1947.style.fontSize */
+  /* `1:1947.style.lineHeightPx` — the line box, NOT `absoluteBoundingBox.height`,
+     which is 29 because Figma's render box is the ceiling of the line box. An
+     earlier revision took the 29 and was 0.2px out. 28.8 / 24 = 1.200000, the
+     same ratio as the desktop heading's 43.2 / 36. */
+  line-height: 28.8px;
+  letter-spacing: 0; /* 1:1663.style.letterSpacing */
+  /* `1:1947.style.textAlignHorizontal` is LEFT; the centring in the mock comes
+     from the parent (`1:1946`, a vertical auto-layout in which the 248px box
+     sits at container-local 47 with 47 to spare). Centring a full-width block
+     reproduces that ink position, but the two models diverge once a merchant
+     types a heading long enough to wrap. */
+  text-align: center;
+  text-transform: none;
+  color: var(--ee-color-black);
+}
+
+.ee-grid__list {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 4px; /* §6.3 — 4px on both axes at 375 */
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.ee-grid__item {
+  margin: 0;
+}
+
+.ee-grid__tile {
+  position: relative; /* positioning context for the hotspot percentages */
+  /* Deliberately NOT `overflow: hidden`. The image needs no clipping from this
+     element — `object-fit: cover` already clips the picture to the content box
+     — and the only thing the clip actually cut was the hotspot's 44 × 44 touch
+     target, which lost half its area (measured 22 × 22) as soon as a merchant
+     set X or Y to 0 or 100. Both values are inside the schema's own
+     `at_least: 0 / at_most: 100` range, so the target has to survive them
+     (S7.8). The disc is unaffected: it stays on the exact percentage. What the
+     overhang must not do is lengthen the document — `.ee-grid__inner` carries
+     the one clip that prevents that. */
+  /* §6.6: the two frames disagree by 0.069 on ratio, more than the ±0.02 the
+     audit allows, so a single ratio cannot satisfy both — it must be switched.
+     The ratio box also means the tile reserves its space before the image
+     loads, so the section contributes no layout shift. */
+  aspect-ratio: 169 / 186.42;
+  /* Doubles as the empty state: a block whose product picker has not been set
+     renders this surface rather than a broken or missing box. */
+  background: var(--ee-color-surface);
+}
+
+.ee-grid__image {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+/* --------------------------------------------------------------------------
+ * Hotspot
+ *
+ * The button is a 44 × 44 hit area (S7.8) centred on the merchant's X/Y
+ * percentages; the visible disc is a child, so enlarging the target does not
+ * move the marker. The percentages are of the tile, which is why one pair of
+ * settings serves every breakpoint (§6.5).
+ * -------------------------------------------------------------------------- */
+
+.ee-hotspot {
+  position: absolute;
+  left: var(--ee-hotspot-x, 50%);
+  top: var(--ee-hotspot-y, 50%);
+  transform: translate(-50%, -50%);
+  /* A target at 100% overhangs its own tile, and the next tile is a later
+     positioned sibling — so without this it would paint and hit-test *over*
+     the overhanging half and the clip would simply move rather than go away.
+     1 is enough to leave the `z-index: auto` tiles behind; the popup layer is
+     1000/1001 and still wins. */
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--ee-color-black); /* the "+" glyph strokes with currentColor */
+  cursor: pointer;
+}
+
+.ee-hotspot__dot {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--ee-hotspot-size);
+  height: var(--ee-hotspot-size);
+  border-radius: 50%;
+  /* `70:128.fills[0]` — #F8F8F8 at opacity 0.9, not an opaque white. The token
+     carries the alpha in the colour so the "+" above it stays fully opaque. */
+  background: var(--ee-color-hotspot-disc);
+}
+
+.ee-hotspot__glyph {
+  display: block;
+  /* The "+" arms are 8.46px on the 22px disc (`70:130` / `70:131` over
+     `70:147`). Expressed as a ratio so the glyph tracks the disc at every
+     breakpoint instead of needing its own value per media query. */
+  width: calc(100% * 8.46 / 22);
+  height: calc(100% * 8.46 / 22);
+}
+
+/* The design specifies no focus state (§2.6), so this one is ours. Two rings:
+ * black reads on pale photography, accent yellow reads on dark photography, so
+ * the indicator survives whatever product image the merchant picks (C9/S7.3). */
+.ee-hotspot:focus-visible {
+  outline: none;
+}
+
+.ee-hotspot:focus-visible .ee-hotspot__dot {
+  outline: 2px solid var(--ee-color-black);
+  outline-offset: 2px;
+  box-shadow: 0 0 0 6px var(--ee-color-accent);
+}
+
+/* ==========================================================================
+ * ≥ 768 — tablet, interpolated per §8.1 (t = 0.369). Still 2 × 3: three
+ * columns at 704px of content would give 228px tiles, too small for the design.
+ * ========================================================================== */
+
+@media (min-width: 768px) {
+  .ee-grid {
+    --ee-hotspot-size: 19px;
+
+    padding-block: 58px 33px;
+  }
+
+  .ee-grid__inner {
+    padding-inline: 32px;
+  }
+
+  .ee-grid__heading {
+    margin-bottom: 24px;
+    font-size: 28px;
+    line-height: 34px;
+    text-align: left;
+  }
+
+  .ee-grid__list {
+    gap: 10px;
+  }
+}
+
+/* ==========================================================================
+ * ≥ 1024 — the 1440 frame.
+ * ========================================================================== */
+
+@media (min-width: 1024px) {
+  .ee-grid {
+    --ee-hotspot-size: 22px;
+
+    padding-block: 90px 51px; /* §2 — banner bottom 878 → container top 968 */
+  }
+
+  .ee-grid__inner {
+    /* §2.1: the Figma grid frame (1339) is 2px wider than its container (1337),
+       an asymmetry that is really in the file. 50.5px of padding on a 1440 box
+       gives a 1339px content width and `repeat(3, 1fr)` then self-corrects to
+       exactly (1339 − 40) / 3 = 433px tiles. Deviation: +1px left, −1px right. */
+    padding-inline: 50.5px;
+  }
+
+  .ee-grid__heading {
+    margin-bottom: 30px;
+    /* `1:1663.style`: Lustria 400, fontSize 36, lineHeightPx 43.2,
+       letterSpacing 0, colour #000000. Read from the Figma REST API — the
+       earlier 36-vs-40 reading is settled, not an open question. */
+    font-size: 36px;
+    line-height: 43.2px;
+  }
+
+  .ee-grid__list {
+    grid-template-columns: repeat(3, 1fr);
+    gap: 20px;
+  }
+
+  .ee-grid__tile {
+    aspect-ratio: 433 / 444;
+  }
+}

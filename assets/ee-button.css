@@ -1,0 +1,117 @@
+/* ==========================================================================
+ * ee-button.css — the two-state animated button from Figma "Component 207".
+ *
+ * Behaviour + palette only. Geometry (width, height, padding, gap) is supplied
+ * by whichever section renders the button, because the design gives the hero
+ * button and the utility-bar CTA different boxes for the same component.
+ *
+ * The two states (DESIGN-TOKENS §3.2) differ in exactly four things:
+ *   1. a left-anchored overlay that is ~1px wide at rest and 100% wide active
+ *   2. the label colour flips
+ *   3. the arrow colour flips (it is an SVG stroked with currentColor)
+ *   4. a drop shadow appears
+ * Geometry, font and position are identical between states — so nothing here
+ * may move, only paint.
+ *
+ * Nothing in this file is a Dawn class: Dawn's base.css owns `.button`, we own
+ * `.ee-btn` (ADR-009).
+ * ========================================================================== */
+
+.ee-btn {
+  position: relative; /* containing block for the wipe overlay */
+  display: inline-flex;
+  align-items: center;
+  box-sizing: border-box;
+  margin: 0;
+  border: 0;
+  overflow: hidden; /* clips the wipe while it is narrower than the button */
+  background: var(--ee-btn-bg);
+  color: var(--ee-btn-fg);
+  font-family: var(--ee-font-body);
+  font-size: 16px;
+  font-weight: 400;
+  line-height: 20.48px; /* Figma emits 1.28 literally */
+  letter-spacing: 0;
+  text-align: left;
+  text-transform: uppercase; /* the design renders the label uppercase */
+  text-decoration: none;
+  cursor: pointer;
+  transition: color var(--ee-duration) var(--ee-easing),
+    box-shadow var(--ee-duration) var(--ee-easing);
+}
+
+/* The wipe. In Figma this is a real layer, pinned to the left edge, 0.48% wide
+ * at rest and inset:0 in the active variant — i.e. it grows left-to-right.
+ * DESIGN-TOKENS §3.2 records why this reading is DERIVED rather than FIGMA. */
+.ee-btn::before {
+  content: "";
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 1px;
+  background: var(--ee-btn-wipe);
+  transition: width var(--ee-duration) var(--ee-easing);
+}
+
+/* :focus-visible mirrors :hover so the animation is reachable by keyboard (C9). */
+.ee-btn:hover,
+.ee-btn:focus-visible {
+  color: var(--ee-btn-fg-hover);
+  box-shadow: var(--ee-shadow-button);
+}
+
+.ee-btn:hover::before,
+.ee-btn:focus-visible::before {
+  width: 100%;
+}
+
+/* The wipe alone is not a focus indicator — it also happens on hover. */
+.ee-btn:focus-visible {
+  outline: 2px solid var(--ee-color-black);
+  outline-offset: 2px;
+}
+
+/* Label and icon must paint ABOVE the wipe, otherwise it covers them. */
+.ee-btn__label,
+.ee-btn__icon {
+  position: relative;
+  z-index: 1;
+}
+
+.ee-btn__icon {
+  display: block;
+  flex: none;
+  width: 26px;
+  height: 12px;
+}
+
+/* Opt-in: the label cell grows to fill the button and centres its text. Used by
+ * the utility-bar CTA, whose Figma label frame is a fixed 119px centred box. */
+.ee-btn--fill .ee-btn__label {
+  flex: 1 1 auto;
+  text-align: center;
+}
+
+/* --- Variants. Only the four custom properties change. ------------------- */
+
+/* Hero button: black at rest, wipes to accent yellow. */
+.ee-btn--dark {
+  --ee-btn-bg: var(--ee-color-black);
+  --ee-btn-fg: var(--ee-color-white);
+  --ee-btn-fg-hover: var(--ee-color-black);
+  --ee-btn-wipe: var(--ee-color-accent);
+}
+
+/* Utility-bar CTA: the same component with the two fills swapped (§3.1). */
+.ee-btn--accent {
+  --ee-btn-bg: var(--ee-color-accent);
+  --ee-btn-fg: var(--ee-color-black);
+  --ee-btn-fg-hover: var(--ee-color-white);
+  --ee-btn-wipe: var(--ee-color-black);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ee-btn,
+  .ee-btn::before {
+    transition: none;
+  }
+}

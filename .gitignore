@@ -18,3 +18,10 @@ Thumbs.db
 .idea/
 .vscode/
 *.swp
+
+# Figma working exports and any token material — never commit (repo is PUBLIC)
+qa/figma/
+*.figma.json
+figma-token*
+.env
+.env.*
