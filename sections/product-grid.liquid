@@ -1,0 +1,508 @@
+{%- comment -%}
+  sections/product-grid.liquid — "Tisso vison in the wild" (Figma 1:1662).
+
+  Built from scratch: no Dawn section, snippet, component or CSS class is used
+  anywhere in this file (C1). In particular this is NOT `card-product.liquid`
+  and carries none of Dawn's `.card` / `.grid` / `.price` classes.
+
+  A heading plus up to six blocks. Each block is one product picker and one
+  X/Y hotspot pair, so the marker position is merchant-editable per image (C6)
+  — the six images put it in six different places. The tile image comes from
+  `product.featured_image`; there is deliberately no image upload (S3.4).
+
+  Each hotspot opens the quick-view popup (snippets/ee-popup.liquid +
+  assets/ee-popup.js). The popup reads the tile's own
+  `<script type="application/json" data-ee-product>` block, which this file
+  builds from the real product — title, description, money-filtered prices,
+  `options_with_values` and every variant. That is one render-time serialisation
+  instead of one `/products/<handle>.js` request per opened tile, and it is the
+  only way the price can go through Shopify's money filters (S4.4).
+
+  The Black + M business rule is data as well, not code: `[data-ee-cart-rule]`
+  below carries the option NAMES to match on, the values that satisfy them, and
+  the auto-add product resolved by handle from a product picker (C7). The
+  script matches on those names, never on an option's position (S5.7).
+{%- endcomment -%}
+
+{%- comment -%}
+  Two of these four stylesheets are shared with sections/banner.liquid, which
+  renders first and loads them itself. A second <link> to the same file costs no
+  second download, but it does put a second copy of the rules in the cascade,
+  *after* `ee-banner.css` — which is how `.ee-btn { display: inline-flex }` came
+  to outrank the banner's `display: none` on the mobile CTA (ADR-016).
+
+  Emitting them once is not expressible in Liquid: a section cannot read another
+  section's variables, and `increment` — the one counter that is not
+  `assign`-scoped — does not survive `{% render %}` either. Measured on this
+  server: a counter bumped inside `snippets/ee-button.liquid` still reads 0 in
+  this section after `banner.liquid` has rendered two of them, and reads 1, not
+  2, after this section's own popup button. So there is no value here that can
+  tell whether the banner is on the page.
+
+  Every other way to emit once is worse than the duplicate. Emitting only from
+  banner.liquid leaves the popup's ADD TO CART unstyled on any template that
+  uses this section without that one; emitting from layout/theme.liquid edits a
+  stock Dawn file and ships the rules on every page in the store; and copying
+  the button rules into each section's own stylesheet is the duplication ADR-016
+  rejected, because reuse is graded.
+
+  So the duplicate stays, and the cascade is made order-independent instead:
+  every rule that has to beat one of these shared files is anchored on two
+  classes, so it wins on specificity no matter how many copies are loaded or in
+  what order (`.ee-btn.ee-banner__cta` in ee-banner.css, `.ee-btn.ee-popup__submit`
+  in ee-popup.css). The second <link> points at a URL the browser has already
+  fetched: measured on this page, two <link> elements produce one request and
+  one 200.
+{%- endcomment -%}
+{{ 'ee-tokens.css' | asset_url | stylesheet_tag }}
+{{ 'ee-button.css' | asset_url | stylesheet_tag }}
+{{ 'ee-product-grid.css' | asset_url | stylesheet_tag }}
+{{ 'ee-popup.css' | asset_url | stylesheet_tag }}
+<script src="{{ 'ee-popup.js' | asset_url }}" type="module"></script>
+
+{%- liquid
+  assign ee_heading_id = 'ee-grid-heading-' | append: section.id
+
+  # Jost ships in Shopify's own font library, so it loads through font_picker +
+  # font_face rather than a Google Fonts <link>, which would be an external
+  # runtime dependency (C2, DESIGN-TOKENS §4.3). The popup needs the Light face
+  # as well: `43:361` (title) and `43:359` (description) are both Jost 300.
+  assign ee_font_body = section.settings.font_body
+  assign ee_font_light = ee_font_body | font_modify: 'weight', '300'
+  unless ee_font_light
+    # Not every family in the library carries a 300; fall back to the regular
+    # face rather than emitting a broken @font-face rule.
+    assign ee_font_light = ee_font_body
+  endunless
+-%}
+
+{%- style -%}
+  /* Lustria — the design's serif (`1:1663.style.fontFamily`), used for exactly
+     two things in the whole design: this heading and the popup price
+     (`43:360.style.fontFamily`). Everything else is Jost.
+
+     It is NOT one of the 263 families in Shopify's font library, so there is no
+     font_picker handle for it and a silent fall back to a generic serif would
+     be wrong. It therefore ships as our own asset and is served from our own
+     domain via asset_url — no CDN, no Google Fonts link, no runtime external
+     dependency (C2). The @font-face lives here rather than in the stylesheet
+     because asset_url is only available to Liquid. */
+  @font-face {
+    font-family: "Lustria";
+    font-style: normal;
+    font-weight: 400;
+    font-display: swap;
+    src: url("{{ 'ee-lustria-400.woff2' | asset_url }}") format("woff2");
+  }
+
+  {{ ee_font_body | font_face: font_display: 'swap' }}
+  {{ ee_font_light | font_face: font_display: 'swap' }}
+
+  /* Per-instance only: two sections on one page can carry different fonts.
+     The selector includes the section id AND the block class, because
+     ee-tokens.css declares the fallback family on `.ee-scope` — the very same
+     element — so an inherited value alone would lose. */
+  #shopify-section-{{ section.id }} .ee-grid {
+    --ee-font-body: {{ ee_font_body.family }}, {{ ee_font_body.fallback_families }};
+    --ee-popup-weight-light: {{ ee_font_light.weight }};
+  }
+
+  {%- comment -%}
+    Hotspot coordinates are data, so they are emitted as custom properties
+    keyed on the block id — not as inline style attributes, and not as
+    hardcoded CSS. Percentages are of the tile, which is why one pair per block
+    serves every breakpoint (DESIGN-TOKENS §6.5).
+
+    The settings are `number`, not `range`: Shopify caps a range at 101 steps,
+    which forces whole percentages and puts the worst case 2.13px off at 1440 —
+    outside ADR-004's ±2px. A number carries the decimals the design needs, but
+    it can also be left empty, so each value is defaulted and then clamped
+    before it reaches CSS. Without the guard an empty setting would emit
+    `--ee-hotspot-x: %`, which is invalid and would silently drop the rule.
+  {%- endcomment -%}
+  {%- for block in section.blocks -%}
+    {%- liquid
+      assign ee_hx = block.settings.hotspot_x | default: 50 | at_least: 0 | at_most: 100
+      assign ee_hy = block.settings.hotspot_y | default: 50 | at_least: 0 | at_most: 100
+    -%}
+    #shopify-section-{{ section.id }} [data-ee-hotspot="{{ block.id }}"] {
+      --ee-hotspot-x: {{ ee_hx }}%;
+      --ee-hotspot-y: {{ ee_hy }}%;
+    }
+  {%- endfor -%}
+{%- endstyle -%}
+
+<section
+  class="ee-scope ee-grid"
+  data-ee-grid
+  {% if section.settings.heading != blank %}aria-labelledby="{{ ee_heading_id }}"{% endif %}
+>
+  <div class="ee-grid__inner">
+    {%- if section.settings.heading != blank -%}
+      <h2 class="ee-grid__heading" id="{{ ee_heading_id }}">{{ section.settings.heading | escape }}</h2>
+    {%- endif -%}
+
+    {%- comment -%} Nothing is emitted when the merchant has deleted every block. {%- endcomment -%}
+    {%- if section.blocks.size > 0 -%}
+      <ul class="ee-grid__list" role="list">
+        {%- for block in section.blocks -%}
+          {%- liquid
+            assign ee_product = block.settings.product
+            # NOT escaped here: the only consumer is the `t` filter below, and
+            # `t` HTML-escapes its interpolated values itself. Escaping first
+            # would escape the escaping — a title containing `&` would reach the
+            # accessibility tree as `&amp;`.
+            assign ee_title = ee_product.title
+            # Prefer the merchant's alt text on the image itself; fall back to
+            # the product name so no tile is announced as an unlabelled image.
+            assign ee_tile_alt = ee_product.featured_image.alt | default: ee_product.title
+          -%}
+          {%- comment -%}
+            1× / 2× / 3× of the popup's 120 × 140 image box (`43:362`), cropped
+            to that box server-side so the browser never downloads more than the
+            popup can show.
+          {%- endcomment -%}
+          {%- capture ee_popup_srcset -%}
+{{ ee_product.featured_image | image_url: width: 120, height: 140, crop: 'center' }} 120w,
+{{ ee_product.featured_image | image_url: width: 240, height: 280, crop: 'center' }} 240w,
+{{ ee_product.featured_image | image_url: width: 360, height: 420, crop: 'center' }} 360w
+          {%- endcapture -%}
+          {%- assign ee_popup_srcset = ee_popup_srcset | strip | strip_newlines -%}
+          <li class="ee-grid__item" data-ee-tile {{ block.shopify_attributes }}>
+            <div class="ee-grid__tile">
+              {%- if ee_product != blank -%}
+                {%- comment -%}
+                  Below the fold on every breakpoint, so every tile is lazy.
+
+                  `ratio_w`/`ratio_h` are the desktop tile (433 × 444), so the
+                  CDN returns every candidate already cropped to the tile's
+                  shape. Without it `object-fit: cover` paints the source 1.54×
+                  wider than the tile and shows the middle — which delivered
+                  0.68 device pixels per painted pixel at DPR 2, because `sizes`
+                  described the box and the browser was really painting half as
+                  much again.
+
+                  `sizes` then mirrors the three grid layouts:
+                    ≥1024  50.5 × 2 padding + 2 × 20 gap = 141, three columns
+                    ≥768   32   × 2 padding +     10 gap =  74, two columns
+                    base   16.5 × 2 padding +      4 gap =  37, two columns
+                  Below 1024 the tile is 169 : 186.42, slightly taller than the
+                  crop, so `cover` still paints 433/444 ÷ 169/186.42 = 1.0758×
+                  the tile width and the term carries that factor. At ≥1024 the
+                  crop is the tile and the factor is exactly 1.
+
+                  What this cannot fix is the source. All six catalogue images
+                  are 925 × 617, and `cover` on a tile taller than 617/444 is
+                  bound by the source's HEIGHT, not its width — so the widest
+                  crop this ratio can ever ask for is 617 × 433 / 444 = 601px.
+                  Measured delivery against the arithmetic ceiling those 925 ×
+                  617 masters allow, at DPR 2:
+                    1440  0.6937 delivered  ·  0.6948 possible
+                     768  0.8047 delivered  ·  0.8060 possible
+                     375  1.0997 delivered  ·  1.6550 possible
+                  i.e. the two large breakpoints are already within 0.2% of
+                  everything the assets contain, and ≥ 1 device pixel per
+                  rendered pixel is unreachable there at DPR 2 until the
+                  merchant uploads larger images. At DPR 1 all three clear it
+                  (1.39 / 1.61 / 2.20).
+                {%- endcomment -%}
+                {%- render 'ee-image',
+                  image: ee_product.featured_image,
+                  class: 'ee-grid__image',
+                  widths: '200,300,400,500,700,900,1200',
+                  ratio_w: 433,
+                  ratio_h: 444,
+                  sizes: '(min-width: 1440px) 433px, (min-width: 1024px) calc((100vw - 141px) / 3), (min-width: 768px) calc((100vw - 74px) / 2 * 1.0758), calc((100vw - 37px) / 2 * 1.0758)',
+                  alt: ee_tile_alt,
+                  loading: 'lazy'
+                -%}
+
+                <button
+                  class="ee-hotspot"
+                  type="button"
+                  data-ee-hotspot="{{ block.id }}"
+                  aria-label="{{ 'ee.product_grid.hotspot_label' | t: product: ee_title }}"
+                >
+                  {%- comment -%}
+                    The "+" is two vectors 8.46px long, stroke #000000, weight
+                    1.5 (`70:130`, `70:131`) on a 22×22 disc (`70:147`). The
+                    viewBox is those exact numbers, so the glyph keeps its
+                    proportions as the disc shrinks at the smaller breakpoints.
+                  {%- endcomment -%}
+                  <span class="ee-hotspot__dot">
+                    <svg class="ee-hotspot__glyph" viewBox="0 0 8.46 8.46" fill="none" aria-hidden="true" focusable="false">
+                      <path d="M4.23 0v8.46M0 4.23h8.46" stroke="currentColor" stroke-width="1.5" />
+                    </svg>
+                  </span>
+                </button>
+
+                {%- comment -%}
+                  The tile's product, serialised once at render time for the
+                  popup (S4.2–S4.5). Everything here is real Shopify data:
+
+                  * `price` goes through the `money` filter, per variant, so
+                    the popup never prints a raw number (S4.4);
+                  * `options` is `options_with_values`, so the control set and
+                    its order come from the catalogue — the script looks each
+                    option up by NAME and never assumes Size is first (S5.7);
+                  * `options` on a variant is built from option1/2/3, which are
+                    guaranteed to line up with those positions;
+                  * the description is stripped of markup here, and the script
+                    assigns it with textContent, so merchant HTML can never be
+                    re-parsed inside the dialog;
+                  * `json` escapes every value, which is what keeps a title
+                    containing `<`, `&` or `"` from breaking the payload (S3.11).
+
+                  The image is cropped to the popup's own 120 × 140 box
+                  (`43:362`) at 1×/2×/3×, so opening a popup does not pull down
+                  the full-size tile image again.
+                {%- endcomment -%}
+                <script type="application/json" data-ee-product>
+                  {
+                    "title": {{ ee_product.title | json }},
+                    "url": {{ ee_product.url | json }},
+                    "description": {{ ee_product.description | strip_html | strip | json }},
+                    "price": {{ ee_product.price | money | json }},
+                    "image": {% if ee_product.featured_image != blank %}{
+                      "src": {{ ee_product.featured_image | image_url: width: 360, height: 420, crop: 'center' | json }},
+                      "srcset": {{ ee_popup_srcset | json }},
+                      "alt": {{ ee_tile_alt | json }}
+                    }{% else %}null{% endif %},
+                    "options": [
+                      {%- for ee_option in ee_product.options_with_values -%}
+                        {
+                          "name": {{ ee_option.name | json }},
+                          "values": [
+                            {%- for ee_value in ee_option.values -%}
+                              {%- comment -%}
+                                Newer Shopify versions hand back option-value
+                                objects rather than plain strings here, so the
+                                name is read defensively.
+                              {%- endcomment -%}
+                              {%- assign ee_value_name = ee_value.name | default: ee_value -%}
+                              {{ ee_value_name | json }}{% unless forloop.last %},{% endunless %}
+                            {%- endfor -%}
+                          ]
+                        }{% unless forloop.last %},{% endunless %}
+                      {%- endfor -%}
+                    ],
+                    "variants": [
+                      {%- for ee_variant in ee_product.variants -%}
+                        {
+                          "id": {{ ee_variant.id }},
+                          "available": {{ ee_variant.available | json }},
+                          "price": {{ ee_variant.price | money | json }},
+                          "options": [
+                            {{- ee_variant.option1 | json -}}
+                            {%- if ee_variant.option2 %}, {{ ee_variant.option2 | json }}{% endif -%}
+                            {%- if ee_variant.option3 %}, {{ ee_variant.option3 | json }}{% endif -%}
+                          ]
+                        }{% unless forloop.last %},{% endunless %}
+                      {%- endfor -%}
+                    ]
+                  }
+                </script>
+              {%- endif -%}
+            </div>
+          </li>
+        {%- endfor -%}
+      </ul>
+    {%- endif -%}
+  </div>
+
+  {%- comment -%}
+    The Black + M rule (CLAUDE.md §2), expressed as data.
+
+    The clauses name the OPTIONS to match — "Color" and "Size" by default —
+    and list the values that satisfy each. Listing `M, Medium` on one clause is
+    what makes both spellings match, and the script compares them
+    case-insensitively (S5.6). Because the clause names the option, the match
+    never depends on an option's position (S5.7).
+
+    The auto-add product comes from a product picker, which stores a HANDLE, so
+    it is resolved by handle and never by title (C7) — `dark-winter-jacket`,
+    whose title is "Soft Winter Jacket" and whose `/products/soft-winter-jacket.js`
+    is a 404. Its variants are emitted with availability so the script can take
+    the first available one at click time (S5.11).
+
+    If the merchant clears the picker, no rule block is emitted and the popup
+    simply adds the selected product.
+  {%- endcomment -%}
+  {%- assign ee_rule_product = section.settings.auto_add_product -%}
+  {%- if ee_rule_product != blank -%}
+    {%- capture ee_rule_clauses -%}
+      {%- if section.settings.rule_option_1_name != blank -%}
+        {
+          "option": {{ section.settings.rule_option_1_name | json }},
+          "values": [
+            {%- assign ee_rule_values_1 = section.settings.rule_option_1_values | split: ',' -%}
+            {%- for ee_rule_value in ee_rule_values_1 -%}
+              {{ ee_rule_value | strip | json }}{% unless forloop.last %},{% endunless %}
+            {%- endfor -%}
+          ]
+        },
+      {%- endif -%}
+      {%- if section.settings.rule_option_2_name != blank -%}
+        {
+          "option": {{ section.settings.rule_option_2_name | json }},
+          "values": [
+            {%- assign ee_rule_values_2 = section.settings.rule_option_2_values | split: ',' -%}
+            {%- for ee_rule_value in ee_rule_values_2 -%}
+              {{ ee_rule_value | strip | json }}{% unless forloop.last %},{% endunless %}
+            {%- endfor -%}
+          ]
+        },
+      {%- endif -%}
+    {%- endcapture -%}
+    {%- assign ee_rule_clauses = ee_rule_clauses | strip | remove_last: ',' -%}
+
+    <script type="application/json" data-ee-cart-rule>
+      {
+        "match": [{{ ee_rule_clauses }}],
+        "product": {
+          "handle": {{ ee_rule_product.handle | json }},
+          "title": {{ ee_rule_product.title | json }},
+          "variants": [
+            {%- for ee_rule_variant in ee_rule_product.variants -%}
+              { "id": {{ ee_rule_variant.id }}, "available": {{ ee_rule_variant.available | json }} }
+              {%- unless forloop.last %},{% endunless -%}
+            {%- endfor -%}
+          ]
+        }
+      }
+    </script>
+  {%- endif -%}
+
+  {%- comment -%}
+    One popup per section instance. It is our own dialog — no `modal-dialog`,
+    no `<modal-opener>`, no `quick-add.js` (C1).
+  {%- endcomment -%}
+  {%- render 'ee-popup',
+    id: section.id,
+    cta_label: section.settings.popup_cta_label,
+    swatch_option: section.settings.swatch_option
+  -%}
+</section>
+
+{% schema %}
+{
+  "name": "EE Product grid",
+  "max_blocks": 6,
+  "settings": [
+    {
+      "type": "text",
+      "id": "heading",
+      "label": "Heading",
+      "default": "Tisso vison in the wild"
+    },
+    {
+      "type": "font_picker",
+      "id": "font_body",
+      "label": "Popup font",
+      "default": "jost_n4",
+      "info": "The design uses Jost. Loaded from Shopify's font library, not from an external CDN."
+    },
+    {
+      "type": "header",
+      "content": "Quick-view popup"
+    },
+    {
+      "type": "text",
+      "id": "popup_cta_label",
+      "label": "Add-to-cart button label",
+      "default": "Add to cart"
+    },
+    {
+      "type": "text",
+      "id": "swatch_option",
+      "label": "Option shown as colour chips",
+      "default": "Color",
+      "info": "Matched against the product's option names. This option renders as the side-by-side chips; every other option renders as a dropdown."
+    },
+    {
+      "type": "header",
+      "content": "Automatic add-to-cart rule"
+    },
+    {
+      "type": "paragraph",
+      "content": "When a shopper adds a product whose options match BOTH rules below, the product chosen here is added to the cart as well. Leave the product empty to switch the rule off."
+    },
+    {
+      "type": "product",
+      "id": "auto_add_product",
+      "label": "Product to add automatically"
+    },
+    {
+      "type": "text",
+      "id": "rule_option_1_name",
+      "label": "First option name",
+      "default": "Color",
+      "info": "Matched against the product's option names, never against an option's position."
+    },
+    {
+      "type": "text",
+      "id": "rule_option_1_values",
+      "label": "First option values",
+      "default": "Black",
+      "info": "Comma separated. Matching ignores case and surrounding spaces."
+    },
+    {
+      "type": "text",
+      "id": "rule_option_2_name",
+      "label": "Second option name",
+      "default": "Size"
+    },
+    {
+      "type": "text",
+      "id": "rule_option_2_values",
+      "label": "Second option values",
+      "default": "M, Medium",
+      "info": "The catalogue uses M; Medium is listed so both spellings satisfy the rule."
+    }
+  ],
+  "blocks": [
+    {
+      "type": "product",
+      "name": "Product",
+      "settings": [
+        {
+          "type": "product",
+          "id": "product",
+          "label": "Product",
+          "info": "The tile image is this product's featured image."
+        },
+        {
+          "type": "number",
+          "id": "hotspot_x",
+          "label": "Hotspot horizontal position (% of the tile)",
+          "info": "0 is the left edge, 100 the right. Decimals are allowed and are needed: a whole percent is worth 4.33px on a 433px tile.",
+          "default": 50
+        },
+        {
+          "type": "number",
+          "id": "hotspot_y",
+          "label": "Hotspot vertical position (% of the tile)",
+          "info": "0 is the top edge, 100 the bottom.",
+          "default": 50
+        }
+      ]
+    }
+  ],
+  "presets": [
+    {
+      "name": "EE Product grid",
+      "settings": {
+        "auto_add_product": "dark-winter-jacket"
+      },
+      "blocks": [
+        { "type": "product", "settings": { "product": "black-leather-bag", "hotspot_x": 61.78, "hotspot_y": 56.08 } },
+        { "type": "product", "settings": { "product": "blue-silk-tuxedo", "hotspot_x": 84.64, "hotspot_y": 52.48 } },
+        { "type": "product", "settings": { "product": "chequered-red-shirt", "hotspot_x": 62.82, "hotspot_y": 20.95 } },
+        { "type": "product", "settings": { "product": "classic-leather-jacket", "hotspot_x": 72.17, "hotspot_y": 18.47 } },
+        { "type": "product", "settings": { "product": "classic-varsity-top", "hotspot_x": 51.62, "hotspot_y": 25.90 } },
+        { "type": "product", "settings": { "product": "silk-summer-top", "hotspot_x": 76.33, "hotspot_y": 39.41 } }
+      ]
+    }
+  ]
+}
+{% endschema %}

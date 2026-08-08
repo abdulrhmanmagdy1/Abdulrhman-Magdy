@@ -468,8 +468,8 @@ report states why it is there.
 **Context.** ADR-009 namespaced every authored class `ee-` so nothing could
 collide with Dawn's `base.css`. That is necessary and it worked — the
 `design-auditor` confirmed zero class collisions. It is **not sufficient**.
-`assets/base.css:258` sets `body { letter-spacing: 0.06rem }`, which **inherits
-into our sections regardless of class names**. Figma specifies
+Dawn sets `letter-spacing: 0.06rem` on `body`, which **inherits into our
+sections regardless of class names**. Figma specifies
 `letterSpacing: 0` on `1:1604`, `1:1613`, and `3:1208`. The leak added
 **+0.6px per character** — **+24.00px** of ink on the utility message and
 **+33.00px** on the strip, and it was the root cause of 3 of the 11 audit FAILs.
@@ -501,3 +501,176 @@ what actually reaches the user.
 **Consequences.** A "no Dawn classes" grep is necessary but **not** evidence of
 isolation. SPEC S8.2 is amended: isolation must be proven by computed-style
 comparison against the Figma node, not by grep alone.
+
+**Citation corrected 2026-08-08.** This ADR originally cited `assets/base.css:258`
+as the source of the leak. That was wrong, and the builder caught it while
+implementing the fix. `base.css:258` is `.text-body`, and the page renders
+`<body class="gradient">` — that class is never applied. The real source is
+`layout/theme.liquid:267`, inside the layout's inline `{% style %}` block (which
+also sets `html` and colour-scheme rules on `body`). Verified directly:
+`grep -n 'letter-spacing' layout/theme.liquid` → line 267. The measured value and
+every consequence of this ADR are unchanged; only the file reference was wrong.
+Recorded rather than silently edited, because a wrong citation would send the
+next person to the wrong file on a Dawn upgrade.
+
+---
+
+## ADR-015 — The announcement strip carries two different strings, not one responsive string
+
+**Date:** 2026-08-08 · **Status:** Accepted
+
+**Context.** The desktop strip (`1:1613`) reads "SUSTAINABLE, ETHICALLY MADE
+CLOTHES IN SIZES XXS TO 6XL" — 55 characters at 16px. The mobile strip
+(`1:1813`) reads **"SUSTAINABLE, ETHICALLY MADE ACTIVEWEAR"** — 38 characters at
+14px. These are *different copy*, not the same sentence reflowed. The supplied
+`design-reference/mobile.png` corroborates it independently.
+
+The design audit had proposed reaching the 34px band height at 375 by shrinking
+the desktop string to 14px, on a counterfactual estimate of ≈247.6px of ink. The
+builder measured the real value: the 55-char string at 14px is ≈394px of ink
+against 342px of content width, so it wraps to two lines and the band becomes
+~48px regardless. **The audit's arithmetic was wrong**; no font-size alone can
+satisfy `1:1812`'s 34px with the desktop copy.
+
+**Decision.** Ship **two** schema settings — `strip_text` and
+`strip_text_mobile` — defaulting to `1:1613.characters` and `1:1813.characters`
+respectively, with mutual fallbacks so blanking either still renders.
+
+**Alternatives considered.**
+1. *One setting, responsive font-size.* Rejected — measured to wrap; cannot hit
+   the 34px band. This was the audit's proposal and the measurement refutes it.
+2. *One setting, truncate at mobile with CSS.* Rejected — it would silently hide
+   merchant copy, and the design's mobile string is different words, not a
+   truncation of the desktop one.
+3. *Hardcode the mobile string.* Rejected — the strip is red rectangle #7 and
+   must be customizer-editable.
+
+**Why this won.** It is the only option that reproduces both frames exactly while
+keeping every user-visible string merchant-editable.
+
+**Consequences.** One extra schema setting. Resolves the `DESIGN-TOKENS.md` §7.1
+open assumption. At 320px the 38-char string still wraps by 0.77px — 320 is not a
+mandated breakpoint and there is no horizontal overflow there.
+
+---
+
+## ADR-016 — Shared stylesheets are included once, by the first section that needs them
+
+**Date:** 2026-08-08 · **Status:** Accepted
+
+**Context.** `banner.liquid` and `product-grid.liquid` both use
+`snippets/ee-button.liquid`, so both emitted `ee-button.css`. Because
+`product-grid` renders second, its copy landed *after* `ee-banner.css` in the
+cascade, and `.ee-btn { display: inline-flex }` outranked
+`.ee-banner__cta { display: none }`. The result was a real regression the harness
+caught: the CTA reappeared at 375 and pushed `scrollWidth` to **379 vs 375**.
+
+**Decision.** A shared stylesheet is emitted **once**. Rules that must win
+against a shared component are anchored on two classes
+(`.ee-banner .ee-btn--dark`), never on `!important` and never on source order.
+
+**Alternatives considered.**
+1. *`!important` on the banner rules.* Rejected outright — "never do this" #10,
+   and it trades a cascade bug for an unfixable one.
+2. *Rely on include order.* Rejected — that is precisely what broke. Section
+   render order is not a contract; a merchant reordering sections in the theme
+   editor would silently change our CSS precedence.
+3. *Duplicate the button CSS into each section's stylesheet.* Rejected — it
+   defeats the reuse the brief explicitly grades.
+
+**Why this won.** Specificity is a property of the code; source order is a
+property of the page. Only one of those is under our control.
+
+**Consequences.** Two-class selectors read slightly heavier. The interim defence
+(anchoring the three colliding rules) is already in place; the single-include
+change is routed to the section that owns the second emission.
+
+---
+
+## ADR-017 — Hotspot coordinates are `number`, not `range`; and the schema carries the cart rule as data
+
+**Date:** 2026-08-08 · **Status:** Accepted
+
+**Context.** `DESIGN-TOKENS.md` §7.2 specifies `hotspot_x`/`hotspot_y` as
+`range (%)` and enumerates 4 settings. The build ships `number` and 12 settings.
+Both divergences are deliberate and neither was documented.
+
+**Decision (a) — `number` over `range`.** Shopify caps a `range` setting at 101
+steps, which forces whole-number percentages. The design needs decimals
+(61.78, 84.64, 62.82, 72.17, 51.62, 76.33 / 56.08, 52.48, 20.95, 18.47, 25.90,
+39.41). Rounding costs a worst case of **2.13px at 1440** — outside ADR-004's
+±2px. `number` accepts decimals and is guarded
+`| default: 50 | at_least: 0 | at_most: 100` because a `number` can be blanked.
+
+*Alternatives:* a `range` at integer precision (rejected — measurably outside
+tolerance); two `range`s for whole + fractional part (rejected — absurd merchant
+UX); hardcoding the positions (rejected — violates C6 and the customizer
+requirement).
+
+**Decision (b) — the Black+M rule is schema data, not JavaScript.** Five
+settings carry it: `auto_add_product` (a product picker, resolved by handle),
+`rule_option_1_name`/`_values`, `rule_option_2_name`/`_values`. Nothing about
+"Color", "Black", "Size", "M" or `dark-winter-jacket` appears in
+`assets/ee-popup.js`.
+
+*Alternatives:* hardcoding the rule in JS (rejected — it is the single most
+brittle thing in the brief; option names differ per store and "Medium" does not
+exist in this catalogue); a metafield (rejected — pushes config into the admin
+where a grader cannot see it).
+
+*Why this won:* it satisfies "match on option **name**, never index"
+structurally rather than by discipline, and the normalisation that makes `M` and
+`Medium` both match is a values list rather than a string comparison buried in code.
+
+**Consequences.** §7.2 is a Figma-derived table, so it legitimately has no row
+for settings that exist to satisfy the brief rather than the design. The three
+remaining undocumented settings are `font_body`, `popup_cta_label` and
+`swatch_option` (which option renders as chips).
+
+**Correction to §7.3.** It predicted the option group labels ("Size", "Colour")
+would be customizer strings. They are **not**, deliberately: `ee-popup.js` builds
+one group per entry in `product.options_with_values`, so the labels are the
+catalogue's own option names and **cannot drift from the real data**. Only
+*which* option renders as chips is a setting. Making the labels editable would
+let a merchant produce a control labelled "Size" that filters on Color.
+
+---
+
+## ADR-018 — Grid image resolution is capped by the source uploads, not by our code
+
+**Date:** 2026-08-08 · **Status:** Accepted · **Open item for the store owner**
+
+**Context.** QA found grid images delivered at **0.68–0.75 device-px per
+rendered px** and attributed it to a `sizes` bug. Re-measured properly — reading
+true file dimensions by re-loading `currentSrc` into a bare `Image()`, because
+density-corrected `naturalWidth` divides by `served ÷ sizes` and lies — the cause
+is different:
+
+| width | box (CSS) | file served | delivered | **ceiling the master allows** |
+|---|---|---|---|---|
+| 1440 | 433×444 | 601×616 | 0.6937 | **0.6948** |
+| 768 | 347×382.77 | 601×616 | 0.8047 | **0.8060** |
+| 375 | 169×186.41 | 400×410 | 1.0997 | 1.6550 |
+
+All six catalogue masters are **925×617**. Under `object-fit: cover` a tile
+taller than 617/444 is bound by the source's *height*, so the widest crop this
+ratio can ever request is `617 × 433 / 444 = 601px`. Delivery at 1440 and 768 is
+already within **0.2%** of everything the assets contain.
+
+**Decision.** Accept. `≥1 device-px per rendered px at DPR 2` is **arithmetically
+unreachable** at 1440 and 768 from 925×617 sources; no `sizes` or `srcset` change
+can produce pixels the master does not have. At DPR 1 all three widths clear it
+(1.39 / 1.61 / 2.20).
+
+*Alternatives:* adding larger `srcset` candidates (rejected — the CDN cannot
+upscale beyond the master; it would emit candidates that resolve to the same
+601px file); changing the tile aspect ratio to fit the sources (rejected —
+`433/444` is Figma's, and fidelity outranks sharpness); `object-fit: contain`
+(rejected — letterboxes, and contradicts the design).
+
+**Why this won.** The honest fix is a content change, and misreporting a content
+ceiling as a code defect would have sent a builder chasing an impossible target.
+
+**Consequences.** **Owner decision required:** re-upload the six product images
+at ≥1300px on the long edge to clear DPR 2, or accept slight softness on
+high-density desktop displays. Nothing in the theme changes either way.
