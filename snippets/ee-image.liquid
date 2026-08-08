@@ -1,0 +1,108 @@
+{%- comment -%}
+  ee-image — one responsive <img> for every image we render.
+
+  Our own snippet, not a Dawn one (C1). Both sections need the same
+  srcset/sizes/lazy-loading logic (S3.10), so it lives here once instead of
+  being copy-pasted into two section files.
+
+  Accepts:
+    image         {Image}   required — a Shopify image drop. Renders nothing if empty.
+    widths        {String}  comma-separated candidate widths for the srcset.
+                            Candidates larger than the source are skipped, so the
+                            browser is never offered an upscaled file.
+    ratio_w       {Number}  optional — with ratio_h, the aspect ratio the CDN
+    ratio_h       {Number}  should crop every candidate to. See below.
+    sizes         {String}  the `sizes` attribute. Defaults to '100vw'.
+    class         {String}  class for the <img>
+    alt           {String}  overrides image.alt (already-escaped values must not
+                            be passed in — this snippet escapes)
+    loading       {String}  'lazy' (default) | 'eager'
+    fetchpriority {String}  optional, e.g. 'high' for an above-the-fold hero
+
+  On ratio_w / ratio_h — why a crop, not just a bigger `sizes`:
+
+  `sizes` tells the browser how wide the *element* is. When the element also
+  carries `object-fit: cover` and the source's aspect ratio differs from the
+  box's, the browser paints the file wider than the box and shows only the
+  middle of it — so a candidate picked from an honest `sizes` arrives
+  under-resolved. Measured on the grid tiles: a 900w file gave 1.35 delivered
+  pixels per painted CSS pixel, i.e. 0.68 at DPR 2.
+
+  Passing the box's ratio makes the CDN do the cropping instead: every
+  candidate comes back already the shape of the box, so one candidate pixel is
+  one painted pixel and `sizes` can stay the plain element width. It also stops
+  us downloading the 35% of every file that `cover` was throwing away.
+
+  Because the CDN never upscales, the candidate list is capped at the widest
+  crop the source can actually fill — otherwise a `900w` descriptor would
+  describe a file the CDN silently returned at 601w. That ceiling is then
+  offered as the top candidate in its own right, so a 2× screen gets everything
+  the source has.
+
+  width/height are always emitted so the browser reserves the correct box and
+  our sections contribute no layout shift (S6.11).
+{%- endcomment -%}
+
+{%- if image != blank -%}
+  {%- liquid
+    assign ee_img_widths = widths | default: '375,550,750,1100,1440' | split: ','
+    assign ee_img_alt = alt | default: image.alt
+    assign ee_img_loading = loading | default: 'lazy'
+
+    assign ee_img_ratio_w = ratio_w | default: 0 | plus: 0
+    assign ee_img_ratio_h = ratio_h | default: 0 | plus: 0
+    assign ee_img_crop = false
+    assign ee_img_max = image.width
+    assign ee_img_max_h = image.height
+
+    if ee_img_ratio_w > 0 and ee_img_ratio_h > 0
+      assign ee_img_crop = true
+      # The widest crop this source can fill without being enlarged. Integer
+      # division floors, which is the safe direction: one pixel short of the
+      # ceiling still downscales, one pixel past it does not exist.
+      assign ee_img_max = image.height | times: ee_img_ratio_w | divided_by: ee_img_ratio_h
+      if ee_img_max > image.width
+        assign ee_img_max = image.width
+      endif
+      assign ee_img_max_h = ee_img_max | times: ee_img_ratio_h | divided_by: ee_img_ratio_w
+      assign ee_img_src = image | image_url: width: ee_img_max, height: ee_img_max_h, crop: 'center'
+    else
+      assign ee_img_src = image | image_url: width: 1000
+    endif
+  -%}
+  {%- capture ee_img_srcset -%}
+    {%- assign ee_img_top = 0 -%}
+    {%- for ee_w in ee_img_widths -%}
+      {%- assign ee_w_num = ee_w | plus: 0 -%}
+      {%- if ee_w_num <= ee_img_max -%}
+        {%- assign ee_img_top = ee_w_num -%}
+        {%- if ee_img_crop -%}
+          {%- assign ee_h_num = ee_w_num | times: ee_img_ratio_h | divided_by: ee_img_ratio_w -%}
+          {{ image | image_url: width: ee_w_num, height: ee_h_num, crop: 'center' }} {{ ee_w_num }}w, {% else -%}
+          {{ image | image_url: width: ee_w_num }} {{ ee_w_num }}w, {% endif -%}
+      {%- endif -%}
+    {%- endfor -%}
+    {%- comment -%}
+      The ceiling itself, when the list stopped short of it. Only in crop mode:
+      without a crop the candidate list is the caller's business and adding the
+      source's full width to it would change what every existing caller ships.
+    {%- endcomment -%}
+    {%- if ee_img_crop and ee_img_max > ee_img_top -%}
+      {{ image | image_url: width: ee_img_max, height: ee_img_max_h, crop: 'center' }} {{ ee_img_max }}w, {% endif -%}
+  {%- endcapture -%}
+  {%- assign ee_img_srcset = ee_img_srcset | strip | remove_last: ',' -%}
+  <img
+    class="{{ class }}"
+    src="{{ ee_img_src | escape }}"
+    {% if ee_img_srcset != blank %}
+      srcset="{{ ee_img_srcset | escape }}"
+      sizes="{{ sizes | default: '100vw' }}"
+    {% endif %}
+    width="{{ ee_img_max }}"
+    height="{{ ee_img_max_h }}"
+    alt="{{ ee_img_alt | escape }}"
+    loading="{{ ee_img_loading }}"
+    decoding="async"
+    {% if fetchpriority != blank %}fetchpriority="{{ fetchpriority }}"{% endif %}
+  >
+{%- endif -%}

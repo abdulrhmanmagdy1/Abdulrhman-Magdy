@@ -1,0 +1,171 @@
+/* ==========================================================================
+ * ee-tokens.css — the design-token layer for the EcomExperts sections.
+ *
+ * The Figma file declares NO variables (docs/DESIGN-TOKENS.md §4.1), so every
+ * custom property below is ours (ADR-009 naming), seeded from the literals
+ * extracted from the design. Both banner.liquid and product-grid.liquid load
+ * this file, so the palette is defined in exactly one place.
+ *
+ * Scoped to `.ee-scope`, never to `:root`: a global selector would leak into
+ * Dawn (CLAUDE.md §5, S8.8). Every one of our section roots carries
+ * `class="ee-scope …"`, so removing the sections removes the tokens with them.
+ * ========================================================================== */
+
+.ee-scope {
+  /* --- Palette (DESIGN-TOKENS §4.2). This is the ENTIRE palette; the design
+     contains no other colour, no border colour and no grey beyond #F5F5F5. */
+  --ee-color-black: #000000;
+  --ee-color-white: #ffffff;
+  --ee-color-accent: #fff544; /* utility-bar CTA background + button hover wipe */
+  --ee-color-surface: #f5f5f5; /* desktop utility bar + announcement strip (`1:1812.fills[0]`) */
+
+  /* `1:1804.fills[0]` — the MOBILE utility bar is #F7F7F7, two levels lighter
+     than the strip. The two greys are genuinely different nodes in the design;
+     they are not a rounding artefact and must not be collapsed into one token. */
+  --ee-color-surface-raised: #f7f7f7;
+
+  /* `3:1672.fills[0]` and `3:1673.strokes[0]` — the mobile hero button paints
+     its label and arrow in #F5F5F5, not #FFFFFF. Same hex as --ee-color-surface
+     but a different role (ink, not background), so it gets its own name.
+     NOTE: the desktop instance of the same component (`43:380.fills[0]`,
+     `43:379.strokes[0]`) really is #FFFFFF — the mock disagrees with itself and
+     this token records the mobile frame verbatim rather than harmonising it. */
+  --ee-color-off-white: #f5f5f5;
+
+  --ee-shadow-button: 0 2px 2px rgba(0, 0, 0, 0.2); /* button hover only */
+  /* `1:1804.effects[0]` — DROP_SHADOW, offset (0, 2), radius 4, #000000 @ 0.15. */
+  --ee-shadow-bar: 0 2px 4px rgba(0, 0, 0, 0.15);
+
+  /* Hotspot disc. `70:128.fills[0]` is #F8F8F8 at fill-opacity 0.9 — NOT an
+     opaque white, and NOT element opacity: the "+" vectors (70:130 / 70:131)
+     are siblings at full opacity, so the transparency belongs to the fill
+     alone. rgba() is therefore the faithful translation; `opacity: 0.9` on the
+     disc element would wrongly fade the glyph too. */
+  --ee-color-hotspot-disc: rgba(248, 248, 248, 0.9);
+
+  /* --- Motion. ASSUMPTION (DESIGN-TOKENS §3.4): get_motion_context returned
+     no interaction, no duration and no easing anywhere in the file. 300ms /
+     decelerating ease is the documented stated guess, not an extraction. */
+  --ee-duration: 300ms;
+  --ee-easing: cubic-bezier(0.4, 0, 0.2, 1);
+
+  /* --- Typography.
+     Body: Jost. It IS in Shopify's font library, so it is injected per section
+     instance by the banner's font_picker (see that section's {% style %}) and
+     the value below is only the fallback until that rule lands.
+
+     Heading: Lustria (`1:1663.style.fontFamily`, `43:360.style.fontFamily`) —
+     the grid heading and the popup price, and nothing else. Lustria is NOT in
+     Shopify's font library (checked against the 263 families Shopify
+     publishes), so it ships as `assets/ee-lustria-400.woff2` and is declared
+     with an @font-face in product-grid.liquid, where `asset_url` is available.
+     That is our own asset, so there is still no runtime external dependency
+     (C2). The serif stack behind it is the fallback if the face fails. */
+  --ee-font-body: system-ui, -apple-system, "Segoe UI", sans-serif;
+  --ee-font-heading: "Lustria", Georgia, "Times New Roman", serif;
+}
+
+/* ==========================================================================
+ * The inheritance firewall (ADR-014).
+ *
+ * ADR-009 namespaced every class `ee-` so nothing can COLLIDE with Dawn. That
+ * is necessary and it is not sufficient: an INHERITED property crosses into our
+ * sections regardless of class names, because inheritance follows the DOM tree,
+ * not the selector.
+ *
+ * One correction to ADR-014's citation, found while writing this: the leak is
+ * NOT `assets/base.css:258`. Line 258 is `.text-body`, and the rendered page
+ * emits `<body class="gradient">` — that class is never applied. The real
+ * source is `layout/theme.liquid`'s inline `{% style %}` block: `html` at 255,
+ * `body` at 261-272, and the colour-scheme `body` rule at 120. Same value, same
+ * conclusion, different file — worth recording because the fix has to survive a
+ * Dawn upgrade, and `theme.liquid` is generated from theme settings.
+ *
+ * Seven inheritable properties reach us from there, and every one of them did:
+ *
+ *   html { font-size: calc(var(--font-body-scale) * 62.5%) }   → 10px root em
+ *   body { font-size: 1.5rem / 1.6rem ≥750px }
+ *   body { letter-spacing: 0.06rem }        ← +0.6px per character
+ *   body { line-height: calc(1 + 0.8 / var(--font-body-scale)) }
+ *   body { font-family: var(--font-body-family) }
+ *   body { font-style: var(--font-body-style) }
+ *   body { font-weight: var(--font-body-weight) }
+ *   body.color-scheme-… { color: rgba(var(--color-foreground), 0.75) }
+ *
+ * `assets/base.css` adds no further GLOBAL inheritable declaration — its
+ * typography lives on classes (`.text-body:258`) or on element selectors our
+ * own classes already outrank (`h1…h5:265`). Two things there still reached us
+ * and are handled below: `h1…h5 { word-break: break-word }` (base.css:282),
+ * which is the only reason our headings survived a long unbreakable token, and
+ * `*, *::before, *::after { box-sizing: inherit }` (theme.liquid:236).
+ * `word-spacing`, `text-transform`, `text-indent`, `white-space` and `hyphens`
+ * are set by Dawn only on classes we never emit — checked, not assumed.
+ *
+ * Each property below is reset to the value the FIGMA nodes specify, never to
+ * `initial`: `all: revert` was considered and rejected (ADR-014, alternative 2)
+ * because it would also discard the Shopify font plumbing we deliberately use.
+ * No `!important` — plain `.ee-scope` specificity is enough, because Dawn's
+ * declarations reach us by inheritance and any declared value beats an
+ * inherited one.
+ *
+ * Compliance is proven by `getComputedStyle` on the rendered elements, not by
+ * reading this file (ADR-014, SPEC S8.2 as amended).
+ * ========================================================================== */
+
+.ee-scope {
+  /* `1:1604`, `1:1613`, `3:1207`, `3:1208`, `3:1669`, `3:1670`, `3:1672`,
+     `1:1663`, `1:1813`, `1:1947` — every TEXT node in both frames carries
+     `style.letterSpacing: 0`. There is no tracked type anywhere in the design. */
+  letter-spacing: normal;
+  word-spacing: normal;
+
+  /* 16px is the design's base body size (`1:1604`/`1:1613.style.fontSize`).
+     Declaring it in px also detaches us from Dawn's 62.5% root-em trick, so a
+     merchant changing Dawn's body-scale setting cannot resize our sections. */
+  font-size: 16px;
+  font-family: var(--ee-font-body);
+  font-style: normal;
+  font-weight: 400; /* the design's body weight; headings raise it themselves */
+
+  /* Every text node in our sections declares its own exact `lineHeightPx`, so
+     this is the neutral floor for the containers between them — not a value
+     inherited from Dawn's `calc(1 + 0.8 / --font-body-scale)`. */
+  line-height: normal;
+
+  /* Every `fills[0]` in both frames is #000000. Dawn's body colour is
+     `rgba(var(--color-foreground), 0.75)` — a 75%-alpha near-black, which is
+     both the wrong colour and a contrast risk. */
+  color: var(--ee-color-black);
+
+  /* Our own wrap policy (QA MAJOR-2). Without this the headings only survived a
+     55-character unbreakable token because Dawn's `base.css:282` sets
+     `word-break: break-word` on `h1`-`h5` — an inherited-Dawn dependency of
+     exactly the kind ADR-014 exists to remove, and one that never covered the
+     description at all (it is a <div>). `anywhere` rather than `break-word`
+     deliberately: only `anywhere` also shrinks the min-content contribution, so
+     a flex item cannot force its container wider than the viewport. */
+  overflow-wrap: anywhere;
+  word-break: normal;
+  hyphens: manual;
+}
+
+/* Not an inherited property, but the same class of dependency: Dawn makes
+ * box-sizing inherit from `html` via a global `*` rule. Our sections state it
+ * for themselves so their box model does not depend on the host theme.
+ * The `*` is scoped inside `.ee-scope`, so nothing outside our two sections is
+ * matched and nothing leaks back into Dawn (S8.8). */
+.ee-scope,
+.ee-scope *,
+.ee-scope *::before,
+.ee-scope *::after {
+  box-sizing: border-box;
+}
+
+/* Single switch for every ee- transition: with the duration at zero the two
+ * button states still swap (the information survives) but nothing animates.
+ * S2.9 / S7.9. Individual `transition: none` rules back this up per component. */
+@media (prefers-reduced-motion: reduce) {
+  .ee-scope {
+    --ee-duration: 0ms;
+  }
+}

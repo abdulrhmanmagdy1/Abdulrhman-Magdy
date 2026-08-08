@@ -1,0 +1,62 @@
+{%- comment -%}
+  ee-button — the two-state animated button from Figma "Component 207".
+
+  Our own snippet, not a Dawn one (C1). It exists because the design uses the
+  same component twice with different geometry and inverted colours, and the
+  popup will need it again in Phase 4.
+
+  Accepts:
+    label   {String}  required — merchant-supplied text. Nothing renders without it.
+    url     {String}  optional — when present an <a> is rendered, otherwise a
+                      <button>, so the control stays keyboard-reachable and the
+                      merchant can still see it in the theme editor before a
+                      destination has been chosen.
+    variant {String}  'dark' (default, hero) | 'accent' (utility-bar CTA)
+    fill    {Boolean} true → the label cell grows and centres, matching Figma's
+                      fixed-width centred label frame on the utility CTA
+    class   {String}  optional geometry class supplied by the calling section
+
+  Usage:
+    {%- render 'ee-button',
+          label: section.settings.button_label,
+          url: section.settings.button_url,
+          variant: 'dark',
+          class: 'ee-banner__button' -%}
+{%- endcomment -%}
+
+{%- if label != blank -%}
+  {%- liquid
+    assign ee_btn_variant = variant | default: 'dark'
+    assign ee_btn_class = 'ee-btn ee-btn--' | append: ee_btn_variant
+    if fill
+      assign ee_btn_class = ee_btn_class | append: ' ee-btn--fill'
+    endif
+    if class != blank
+      assign ee_btn_class = ee_btn_class | append: ' ' | append: class
+    endif
+  -%}
+
+  {%- comment -%}
+    Captured once so the <a> and <button> branches cannot drift apart.
+    The arrow is an inline SVG stroked with currentColor, which is what makes
+    the colour flip carry the arrow as well as the label (DESIGN-TOKENS §3.5).
+    The shaft is 1px and the head occupies the last 8px, per the native render.
+  {%- endcomment -%}
+  {%- capture ee_btn_inner -%}
+    <span class="ee-btn__label">{{ label | escape }}</span>
+    <svg class="ee-btn__icon" viewBox="0 0 26 12" fill="none" aria-hidden="true" focusable="false">
+      <path d="M0 6h24M16 1l8 5-8 5" stroke="currentColor" stroke-width="1" />
+    </svg>
+  {%- endcapture -%}
+
+  {%- if url != blank -%}
+    {%- comment -%}
+      `| escape` on the href: a `url` schema setting is constrained by Shopify,
+      so this is not an injection route — but every other interpolation in these
+      files escapes, and an unescaped attribute is not a habit worth keeping.
+    {%- endcomment -%}
+    <a class="{{ ee_btn_class }}" href="{{ url | escape }}">{{ ee_btn_inner }}</a>
+  {%- else -%}
+    <button class="{{ ee_btn_class }}" type="button">{{ ee_btn_inner }}</button>
+  {%- endif -%}
+{%- endif -%}
