@@ -538,5 +538,21 @@
       "send_on": "YYYY-MM-DD",
       "send_on_label": "Send on (optional)"
     }
+  },
+  "ee": {
+    "product_grid": {
+      "hotspot_label": "View {{ product }}"
+    },
+    "popup": {
+      "close": "Close",
+      "add_to_cart": "Add to cart",
+      "choose": "Choose your {{ option }}",
+      "require": "Please choose a {{ option }}.",
+      "sold_out": "This combination is sold out.",
+      "unavailable": "That combination is unavailable.",
+      "adding": "Adding to your cart…",
+      "added": "Added to your cart.",
+      "error": "Sorry, we could not add this to your cart. Please try again."
+    }
   }
 }

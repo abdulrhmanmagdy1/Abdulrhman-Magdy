@@ -1,0 +1,85 @@
+/*
+ * ------------------------------------------------------------
+ * templates/page.gift-guide.json — the Gift Guide page.
+ *
+ * Contains ONLY our two sections. Dawn's `main-page` section is
+ * deliberately absent: C1 forbids reusing a ready-made Dawn
+ * section, and the design has no page title or page body.
+ *
+ * Section settings that are not listed here fall back to the
+ * defaults declared in each section's {% schema %}, so the only
+ * values written out are the ones the schema cannot default:
+ * the six product handles (products are resolved by handle,
+ * never by title — C7) and their per-block hotspot positions,
+ * in the design's reading order, plus the handle of the product
+ * the Black + M rule adds automatically. A `product` setting
+ * stores a handle, which is exactly what C7 requires:
+ * `dark-winter-jacket` is titled "Soft Winter Jacket", and
+ * `/products/soft-winter-jacket.js` is a 404.
+ * ------------------------------------------------------------
+ */
+{
+  "sections": {
+    "banner": {
+      "type": "banner"
+    },
+    "product_grid": {
+      "type": "product-grid",
+      "settings": {
+        "auto_add_product": "dark-winter-jacket"
+      },
+      "blocks": {
+        "tile_1": {
+          "type": "product",
+          "settings": {
+            "product": "black-leather-bag",
+            "hotspot_x": 61.78,
+            "hotspot_y": 56.08
+          }
+        },
+        "tile_2": {
+          "type": "product",
+          "settings": {
+            "product": "blue-silk-tuxedo",
+            "hotspot_x": 84.64,
+            "hotspot_y": 52.48
+          }
+        },
+        "tile_3": {
+          "type": "product",
+          "settings": {
+            "product": "chequered-red-shirt",
+            "hotspot_x": 62.82,
+            "hotspot_y": 20.95
+          }
+        },
+        "tile_4": {
+          "type": "product",
+          "settings": {
+            "product": "classic-leather-jacket",
+            "hotspot_x": 72.17,
+            "hotspot_y": 18.47
+          }
+        },
+        "tile_5": {
+          "type": "product",
+          "settings": {
+            "product": "classic-varsity-top",
+            "hotspot_x": 51.62,
+            "hotspot_y": 25.90
+          }
+        },
+        "tile_6": {
+          "type": "product",
+          "settings": {
+            "product": "silk-summer-top",
+            "hotspot_x": 76.33,
+            "hotspot_y": 39.41
+          }
+        }
+      },
+      "block_order": ["tile_1", "tile_2", "tile_3", "tile_4", "tile_5", "tile_6"]
+    }
+  },
+  "order": ["banner", "product_grid"]
+}

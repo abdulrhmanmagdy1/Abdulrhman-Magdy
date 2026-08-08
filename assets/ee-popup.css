@@ -1,0 +1,521 @@
+/* ==========================================================================
+ * ee-popup.css — the quick-view popup opened from a grid hotspot.
+ *
+ * Source: docs/DESIGN-TOKENS.md "⚠ CORRECTIONS §C1", which supersedes §5 of
+ * the same file. Every geometric value below is the Figma REST reading of a
+ * named node, cited inline as `node-id`. The popup frame is `43:351`:
+ *
+ *   311 × 447 · fill #FFFFFF · DROP_SHADOW 0 2 blur 4 #000000 @ 0.2
+ *   content column 271 wide, 20px side padding (20 + 271 + 20 = 311)
+ *
+ * Vertical rhythm, popup-relative, from the same node table:
+ *
+ *    12.7  close ✕            43:374
+ *    36    product image      43:362   120 × 140, x-offset 17
+ *    49    title              43:361   x-offset 145  (8px right of the image)
+ *    88    price              43:360
+ *   119    description        43:359   width 146
+ *   186    "Color" label     103:156
+ *   210    colour chips      103:185   271 × 40.44
+ *   262    "Size" label      116:493
+ *   286    size dropdown     116:954   271 × 40.44
+ *   377    ADD TO CART        43:377   271 × 45
+ *   422    → + 25 bottom padding = 447 ✓
+ *
+ * Those offsets are expressed below as margins between adjacent elements, so
+ * the rhythm survives a product whose description or option list differs from
+ * the mock. Each margin is annotated with the subtraction that produced it.
+ *
+ * NOTHING here is a Dawn class or a Dawn component (C1): the dialog, the
+ * chips, the dropdown and the focus trap are all ours. `.ee-popup__submit` is
+ * only a geometry class layered onto our own `snippets/ee-button.liquid`,
+ * which is the same Figma component (`43:377` is named "Group 1000007810",
+ * exactly like the banner's top-bar CTA `1:1605`).
+ * ========================================================================== */
+
+.ee-popup {
+  /* `103:156` / `116:493` are #333333 — the one colour in the popup that is
+     not in the §4.2 palette, so it is declared here rather than in
+     ee-tokens.css, which this phase must not touch. */
+  --ee-popup-label-color: #333333;
+  /* Stroke weight shared by the chip box (`103:185`) and the size box
+     (`116:954`): 0.5. */
+  --ee-popup-hairline: 0.5px solid var(--ee-color-black);
+
+  /* The element itself is the modal layer — full viewport, transparent, one
+     child. The design shows no scrim: the popup sits directly over the grid
+     with only its drop shadow separating it (`43:351`, and the official
+     screenshot), so there is no colour here to invent. Making the layer the
+     custom element rather than an extra empty <div> is deliberate: Dawn's
+     reset carries a `div:empty { display: none }` rule that would collapse a
+     bare backdrop div, and the fewer elements our markup asks the host theme
+     to leave alone, the better. Clicks that land on this element rather than
+     on the dialog are the "outside click" (S4.6). */
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: block;
+  background: transparent;
+}
+
+/* The UA `[hidden]` rule loses to `.ee-popup { display: block }`, so the
+   hidden state has to be restated. */
+.ee-popup[hidden] {
+  display: none;
+}
+
+.ee-popup__dialog {
+  /* Anchored to the clicked tile by JS, which writes --ee-popup-left/-top as
+     custom properties rather than as an inline layout style. Fixed rather than
+     absolute because the tile sits inside `overflow: hidden` and because the
+     page is scroll-locked while the popup is open, so nothing can drift. */
+  position: fixed;
+  left: var(--ee-popup-left, 50%);
+  top: var(--ee-popup-top, 50%);
+  z-index: 1001;
+  box-sizing: border-box;
+  width: 311px; /* 43:351.absoluteBoundingBox.width */
+  max-width: calc(100vw - 32px); /* never wider than a 375 viewport allows */
+  max-height: calc(100vh - 32px); /* short viewports scroll the dialog, not the page */
+  overflow-y: auto;
+  padding: 36px 20px 25px; /* image top 36 · content column 271 · bottom 25 */
+  background: var(--ee-color-white); /* 43:351.fills[0] */
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2); /* 43:351 DROP_SHADOW 0,2 blur 4 @0.2 */
+  color: var(--ee-color-black);
+  font-family: var(--ee-font-body);
+  animation: ee-popup-in var(--ee-duration) var(--ee-easing);
+}
+
+/* The dialog is a real focus target (JS moves focus to it on open) but it is
+   not a control, so it must not paint a ring of its own. */
+.ee-popup__dialog:focus {
+  outline: none;
+}
+
+@keyframes ee-popup-in {
+  from {
+    opacity: 0;
+  }
+
+  to {
+    opacity: 1;
+  }
+}
+
+/* --------------------------------------------------------------------------
+ * Close ✕ — `43:374`: 16.97 × 16.97, two vectors, stroke #000000 weight 1.5,
+ * 12.7px from the top and 15.2px from the right.
+ *
+ * The hit area is 44 × 44 (S7.8) and the *glyph* — not the button box — is what
+ * lands on those two numbers. Horizontally that is pure offset:
+ * (44 − 16.97) / 2 = 13.515, so right = 15.2 − 13.515 = 1.685.
+ *
+ * Vertically the same arithmetic wants top = 12.7 − 13.515 = −0.815, which hung
+ * 0.815px of the target off the top of a dialog that is a scroll container
+ * (`overflow-y: auto` computes `overflow-x` to `auto` as well). Chromium was
+ * measured still to hit-test that strip, so it was not costing a click here —
+ * but a target that depends on an engine declining to clip it is not a target.
+ * The button box now starts at the dialog's top edge and the glyph is lifted
+ * inside it instead, which leaves both Figma numbers exactly where they were.
+ * -------------------------------------------------------------------------- */
+
+.ee-popup__close {
+  position: absolute;
+  top: 0;
+  right: 1.685px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--ee-color-black);
+  cursor: pointer;
+}
+
+.ee-popup__close-glyph {
+  display: block;
+  width: 16.97px;
+  height: 16.97px;
+  /* Flex centring centres the item's *margin* box, so 1.63px of bottom margin
+     lifts the glyph by half of it — 0.815px — landing its top edge on
+     `43:374`'s 12.7 while the button's own box stays inside the dialog. */
+  margin-bottom: 1.63px;
+}
+
+.ee-popup__close:focus-visible {
+  outline: 2px solid var(--ee-color-black);
+  outline-offset: -2px;
+}
+
+/* --------------------------------------------------------------------------
+ * Head — image + text column.
+ *
+ * `43:362` is at x-offset 17, i.e. 3px left of the 20px content column, so the
+ * row is pulled 3px left. Columns: 120 (image) + 8 (gap: title x-offset 145 −
+ * image right edge 137) + 146 (`43:359.width`) = 274, which ends at 17 + 274 =
+ * 291 = the content column's right edge. ✓
+ *
+ * The row height is pinned to the image height (140). That is what keeps the
+ * "Color" label on 186 for every product: 36 + 140 + 10 = 186. The description
+ * is line-clamped so a long merchant description cannot push it down.
+ * -------------------------------------------------------------------------- */
+
+.ee-popup__head {
+  display: grid;
+  grid-template-columns: 120px minmax(0, 1fr);
+  column-gap: 8px;
+  height: 140px; /* 43:362.height */
+  margin-left: -3px; /* 20 − 17 */
+}
+
+.ee-popup__media {
+  width: 120px; /* 43:362.width */
+  height: 140px;
+  overflow: hidden;
+  /* Doubles as the empty state for a product with no image (S4.11). */
+  background: var(--ee-color-surface);
+}
+
+.ee-popup__image {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.ee-popup__title {
+  /* 49 (43:361.y) − 36 (43:362.y) */
+  margin: 13px 0 0;
+  /* Stated, not inherited: Dawn's reset gives every h1–h6 a font-family of its
+     own, and an element selector beats inheritance. The same reason is why
+     each text rule below names its family too. */
+  font-family: var(--ee-font-body);
+  font-weight: var(--ee-popup-weight-light, 300); /* 43:361.style.fontWeight */
+  font-size: 16px;
+  line-height: 19.2px;
+  letter-spacing: 0;
+  color: var(--ee-color-black);
+}
+
+.ee-popup__price {
+  /* 88 (43:360.y) − 68.2 (title bottom: 49 + 19.2) */
+  margin: 19.8px 0 0;
+  /* Lustria — `43:360.style.fontFamily`. The @font-face that backs this stack
+     is declared in product-grid.liquid, where asset_url is available. It is
+     one of only two Lustria uses in the whole design. */
+  font-family: var(--ee-font-heading);
+  font-weight: 400;
+  font-size: 16px;
+  line-height: 19.2px;
+}
+
+.ee-popup__description {
+  /* 119 (43:359.y) − 107.2 (price bottom: 88 + 19.2) */
+  margin: 11.8px 0 0;
+  font-family: var(--ee-font-body);
+  font-weight: var(--ee-popup-weight-light, 300); /* 43:359.style.fontWeight */
+  font-size: 14px;
+  line-height: 15.4px;
+  letter-spacing: -0.14px; /* 43:359.style.letterSpacing */
+  /* The design's description box has 140 − (119 − 36) = 57px of room, i.e.
+     three 15.4px lines. Real catalogue descriptions are longer than the mock's,
+     so they are clamped rather than allowed to grow the popup past 447. The
+     full text stays in the DOM for assistive technology. */
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+  line-clamp: 3;
+  overflow: hidden;
+}
+
+/* --------------------------------------------------------------------------
+ * Option groups
+ *
+ * Rendered from `product.options_with_values`, so the count and the order come
+ * from the catalogue, never from a hardcoded list. One group per option:
+ * the colour option becomes the side-by-side chips (`103:185`), everything
+ * else becomes the dropdown (`116:954`).
+ * -------------------------------------------------------------------------- */
+
+.ee-popup__options {
+  /* 186 ("Color" label, 103:156.y) − 176 (head bottom: 36 + 140) */
+  margin-top: 10px;
+}
+
+.ee-popup__group {
+  /* <fieldset> reset: it is used for its grouping semantics only. */
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.ee-popup__group + .ee-popup__group {
+  /* 262 ("Size" label, 116:493.y) − 250.44 (chips bottom: 210 + 40.44) */
+  margin-top: 11.56px;
+}
+
+.ee-popup__label {
+  display: block;
+  padding: 0; /* <legend> carries UA padding */
+  font-family: var(--ee-font-body);
+  font-weight: 400;
+  font-size: 14px;
+  line-height: 18.2px;
+  letter-spacing: 0;
+  color: var(--ee-popup-label-color); /* 103:156 / 116:493 → #333333 */
+}
+
+/* --- Colour chips — `103:185` ------------------------------------------- */
+
+.ee-popup__chips {
+  /* 210 (103:185.y) − 204.2 (label bottom: 186 + 18.2) */
+  margin-top: 5.8px;
+  display: grid;
+  /* "one 271 × 40.44 box … split into two equal halves". Auto columns keep the
+     halves equal for two values and stay equal for three or more, so a
+     catalogue with more colours than the mock still renders. */
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(0, 1fr);
+  min-height: 40.44px;
+  border: var(--ee-popup-hairline);
+}
+
+.ee-popup__chip {
+  position: relative; /* containing block for the visually hidden input */
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  cursor: pointer;
+}
+
+/* The split between the halves. Only between, never on the outer edges, so the
+   box keeps the single 0.5px outline the node describes. */
+.ee-popup__chip + .ee-popup__chip {
+  border-left: var(--ee-popup-hairline);
+}
+
+/* A real radio, kept in the accessibility tree and in the tab/arrow order —
+   only its paint is replaced. */
+.ee-popup__chip-input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.ee-popup__chip-body {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-width: 0;
+  /* Side padding is not carried by any node in `103:185`; 12px is ours and is
+     recorded as an assumption. */
+  padding: 0 12px;
+}
+
+/* The colour bar at the left of each half: `103:151` (5.81 wide, white with a
+   stroke) and `103:152` (4.84 wide, #000000). One 5.81px bar is used for every
+   value, with the hairline that `103:151` carries so a white swatch is still
+   visible on white. Its height is not in the file — 18px matches the label. */
+.ee-popup__swatch {
+  flex: none;
+  width: 5.81px;
+  height: 18px;
+  border: 0.5px solid var(--ee-color-black);
+  background: var(--ee-chip-swatch, transparent);
+}
+
+.ee-popup__chip-text {
+  overflow: hidden;
+  font-family: var(--ee-font-body);
+  font-weight: 400;
+  font-size: 18px; /* 103:185 labels: Jost 400 18/18, ls −0.36 */
+  line-height: 18px;
+  letter-spacing: -0.36px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Selection. The only evidence in the file for a selected option is
+   `116:532`'s second variant — solid #000000 with a #FFFFFF label — so that is
+   what a chosen chip does. Set from JS as an attribute rather than relying on
+   :has(), so the state is explicit in the DOM for QA. */
+.ee-popup__chip[data-ee-selected="true"] {
+  background: var(--ee-color-black);
+  color: var(--ee-color-white);
+}
+
+.ee-popup__chip[data-ee-selected="true"] .ee-popup__swatch {
+  border-color: var(--ee-color-white);
+}
+
+.ee-popup__chip-input:focus-visible ~ .ee-popup__chip-body {
+  outline: 2px solid var(--ee-color-black);
+  outline-offset: -3px;
+}
+
+.ee-popup__chip[data-ee-selected="true"] .ee-popup__chip-input:focus-visible ~ .ee-popup__chip-body {
+  outline-color: var(--ee-color-accent);
+}
+
+/* --- Size dropdown — `116:954` ------------------------------------------ */
+
+.ee-popup__select-wrap {
+  /* 286 (116:954.y) − 280.2 (label bottom: 262 + 18.2) */
+  position: relative;
+  margin-top: 5.8px;
+}
+
+.ee-popup__select {
+  appearance: none;
+  box-sizing: border-box;
+  width: 100%;
+  height: 40.44px; /* 116:954.height */
+  /* Right padding clears the divider (55px of box) plus a little air. */
+  padding: 0 65px 0 12px;
+  border: var(--ee-popup-hairline);
+  border-radius: 0;
+  background: var(--ee-color-white);
+  color: var(--ee-color-black);
+  font-family: inherit;
+  font-weight: 400;
+  font-size: 16px; /* placeholder: Jost 400 16/16, ls −0.32 */
+  line-height: 16px;
+  letter-spacing: -0.32px;
+  cursor: pointer;
+}
+
+.ee-popup__select:focus-visible {
+  outline: 2px solid var(--ee-color-black);
+  outline-offset: -3px;
+}
+
+/* `116:563` — the vertical rule at x-offset 216 of the 271px box. Expressed as
+   a percentage (216 / 271) so it stays in proportion when the popup is clamped
+   to a narrow viewport. */
+.ee-popup__select-divider {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 79.7048%;
+  width: 0.5px;
+  background: var(--ee-color-black);
+  pointer-events: none;
+}
+
+/* `116:495` — 12 × 6, stroke 1.5, centred in the 55px cell right of the
+   divider: (55 − 12) / 2 = 21.5. */
+.ee-popup__chevron {
+  position: absolute;
+  top: 50%;
+  right: 21.5px;
+  width: 12px;
+  height: 6px;
+  transform: translateY(-50%);
+  color: var(--ee-color-black);
+  pointer-events: none;
+}
+
+/* --------------------------------------------------------------------------
+ * Status line + ADD TO CART
+ *
+ * `43:377` sits at 377, and the size box ends at 326.44 — a 50.56px gap that
+ * the design leaves empty. The status line is parked in it, absolutely
+ * positioned, so an error message (S5.10) appears without moving the button or
+ * changing the popup's 447px height.
+ * -------------------------------------------------------------------------- */
+
+.ee-popup__status {
+  position: absolute;
+  right: 20px;
+  bottom: 78px; /* 25 bottom padding + 45 button + 8 */
+  left: 20px;
+  margin: 0;
+  font-family: var(--ee-font-body);
+  font-weight: 400;
+  font-size: 12px;
+  line-height: 14px;
+  color: var(--ee-color-black);
+}
+
+/* Anchored on two classes, not one. `ee-button.css` is a shared file that both
+   sections load, so it can appear more than once and after this file; every
+   declaration below has a same-specificity counterpart in it (`margin`,
+   `width`, `height`, `padding`), and a rule that needs source order to win is a
+   rule waiting to lose one (ADR-016). `.ee-btn.ee-popup__submit` wins on
+   specificity in any order and against any number of copies. */
+.ee-btn.ee-popup__submit {
+  /* 377 (43:377.y) − 326.44 (size box bottom: 286 + 40.44) */
+  margin-top: 50.56px;
+  width: 271px; /* 43:377.width */
+  max-width: 100%;
+  height: 45px; /* 43:377.height */
+  padding: 0 20px;
+  justify-content: space-between;
+}
+
+/* `43:379` — the arrow is 33.7 wide with stroke weight 1.5 here, against the
+   26 × 12 / weight 1 the banner uses for the same component. Overriding the
+   geometry in this file keeps snippets/ee-button.liquid untouched and shared. */
+.ee-popup__submit .ee-btn__icon {
+  width: 33.7px;
+  height: 12px;
+}
+
+.ee-popup__submit .ee-btn__icon path {
+  stroke-width: 1.5;
+}
+
+/* The button is disabled for the duration of the request (S5.9) and while the
+   selection is incomplete. Fill and label do not change — the design carries no
+   disabled state — only the cursor, so nothing invented reaches the audit. */
+.ee-popup__submit[disabled] {
+  cursor: default;
+}
+
+/* --------------------------------------------------------------------------
+ * Background scroll lock (S4.10)
+ *
+ * Applied by JS to <html>. The padding compensates for the scrollbar that
+ * `overflow: hidden` removes, so locking does not shift the page sideways;
+ * the scroll position itself is preserved by the browser, so nothing jumps.
+ * The rule ships in this stylesheet, which only our section loads, so removing
+ * the section removes it (S8.8).
+ * -------------------------------------------------------------------------- */
+
+.ee-scroll-locked {
+  overflow: hidden;
+  padding-right: var(--ee-scrollbar-width, 0px);
+}
+
+/* --------------------------------------------------------------------------
+ * ≤ 639 — the popup is wider than half a phone screen, so anchoring it to a
+ * 169px tile would put it off-centre and hard against an edge. Below 640 it is
+ * centred in the viewport instead and the anchoring custom properties are
+ * ignored. The rule wins by source order, so JS needs no breakpoint knowledge.
+ * -------------------------------------------------------------------------- */
+
+@media (max-width: 639px) {
+  .ee-popup__dialog {
+    left: 50%;
+    top: 50%;
+    transform: translate(-50%, -50%);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ee-popup__dialog {
+    animation: none;
+  }
+}

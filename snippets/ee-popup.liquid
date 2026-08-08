@@ -1,0 +1,209 @@
+{%- comment -%}
+  ee-popup — the quick-view dialog opened from a product-grid hotspot.
+
+  Our own dialog, built from scratch (C1). It is deliberately NOT Dawn's
+  `modal-dialog`, `<modal-opener>`, `quick-add.js`, `product-form.liquid` or
+  `product-variant-picker.liquid`; none of those files is referenced anywhere
+  in this snippet, in assets/ee-popup.js or in sections/product-grid.liquid.
+
+  Geometry and typography come from Figma `43:351` — see the node table at the
+  top of assets/ee-popup.css.
+
+  One instance per section, rendered once, populated by assets/ee-popup.js from
+  the per-tile JSON the section emits. Rendering the shell in Liquid rather than
+  building it in JS keeps the markup reviewable, keeps every string in the
+  locale file, and lets ADD TO CART reuse `snippets/ee-button.liquid` — which
+  is correct twice over, because `43:377` is literally the same Figma component
+  ("Group 1000007810") as the banner's top-bar CTA `1:1605`.
+
+  Accepts:
+    id             {String}  required — the section id, used to build unique DOM ids
+    cta_label      {String}  optional — merchant override for the ADD TO CART label
+    swatch_option  {String}  optional — the option name that renders as the
+                             side-by-side chips (`103:185`); every other option
+                             renders as the dropdown (`116:954`)
+
+  Every user-visible string here comes from `locales/en.default.json` under the
+  append-only `ee.popup.*` namespace, or from a section setting. Nothing is
+  hardcoded in this file (S8.12).
+{%- endcomment -%}
+
+{%- liquid
+  assign ee_popup_title_id = 'ee-popup-title-' | append: id
+
+  # The merchant's label wins; the locale string is the fallback. Written as an
+  # `if` rather than `| default: … | t` because chaining `t` onto a real label
+  # would try to translate the label itself and emit "translation missing".
+  assign ee_popup_cta = cta_label
+  if ee_popup_cta == blank
+    assign ee_popup_cta = 'ee.popup.add_to_cart' | t
+  endif
+-%}
+
+{%- comment -%}
+  The Ajax Cart API endpoint. `routes.cart_add_url` resolves to `/cart/add` —
+  the form endpoint — and carries any locale or market prefix the storefront
+  is running under; the `.js` suffix turns it into the Ajax endpoint S5.1 asks
+  for, so `/fr/cart/add.js` is produced on a French storefront and
+  `/cart/add.js` here. A literal path would break on a prefixed storefront.
+{%- endcomment -%}
+<ee-popup
+  class="ee-popup"
+  data-ee-popup
+  data-ee-cart-add-url="{{ routes.cart_add_url | escape }}.js"
+  data-ee-swatch-option="{{ swatch_option | escape }}"
+  hidden
+>
+  {%- comment -%}
+    The <ee-popup> element itself is the modal layer: full viewport,
+    transparent (the design has no scrim — `43:351` sits straight on the grid
+    with only its drop shadow), and it is what a click-outside lands on.
+  {%- endcomment -%}
+  <div
+    class="ee-popup__dialog"
+    role="dialog"
+    aria-modal="true"
+    aria-labelledby="{{ ee_popup_title_id }}"
+    tabindex="-1"
+    data-ee-popup-dialog
+  >
+    {%- comment -%}
+      `43:374` — a 16.97 × 16.97 group of two vectors, stroke #000000 weight
+      1.5. The viewBox is those exact numbers and the endpoints are inset by
+      half the stroke so neither line is clipped by its own width.
+    {%- endcomment -%}
+    <button
+      class="ee-popup__close"
+      type="button"
+      data-ee-popup-close
+      aria-label="{{ 'ee.popup.close' | t }}"
+    >
+      <svg class="ee-popup__close-glyph" viewBox="0 0 16.97 16.97" fill="none" aria-hidden="true" focusable="false">
+        <path d="M0.75 0.75 16.22 16.22M16.22 0.75 0.75 16.22" stroke="currentColor" stroke-width="1.5" />
+      </svg>
+    </button>
+
+    <div class="ee-popup__head">
+      {%- comment -%}
+        Hidden until JS has a real image URL, so a product with no image shows
+        the empty surface rather than a broken <img> (S4.11).
+
+        The <img> is inside a <template> rather than in the document: a shell
+        rendered before any product is chosen has no src to give it, and an
+        <img> with no src is an image whose `naturalWidth` is 0 — which is
+        indistinguishable from a broken one. The QA harness counts exactly that
+        and failed the page at all three widths. A <template>'s contents are
+        inert and are not images at all until they are cloned, which they are on
+        the first product that has one. The markup stays here in Liquid.
+      {%- endcomment -%}
+      <div class="ee-popup__media" data-ee-popup-media hidden>
+        <template data-ee-popup-image-template>
+          <img
+            class="ee-popup__image"
+            data-ee-popup-image
+            alt=""
+            width="120"
+            height="140"
+            loading="lazy"
+            decoding="async"
+          >
+        </template>
+      </div>
+
+      <div class="ee-popup__text">
+        {%- comment -%}
+          <h3>: the page runs <h1> banner → <h2> grid heading, so the popup's
+          product name is the next level down and no level is skipped (S7.6).
+          It is also the dialog's accessible name (S7.5).
+        {%- endcomment -%}
+        <h3 class="ee-popup__title" id="{{ ee_popup_title_id }}" data-ee-popup-title></h3>
+        <p class="ee-popup__price" data-ee-popup-price></p>
+        <p class="ee-popup__description" data-ee-popup-description></p>
+      </div>
+    </div>
+
+    {%- comment -%}
+      One group per entry in `product.options_with_values`. Built by JS because
+      the set differs per product; see assets/ee-popup.js.
+    {%- endcomment -%}
+    <div class="ee-popup__options" data-ee-popup-options></div>
+
+    {%- comment -%}
+      Validation, sold-out and cart-failure messages land here (S5.10). It is
+      absolutely positioned into the gap the design leaves above the button, so
+      a message never moves the button.
+    {%- endcomment -%}
+    <p class="ee-popup__status" data-ee-popup-status role="status" aria-live="polite"></p>
+
+    {%- render 'ee-button',
+      label: ee_popup_cta,
+      variant: 'dark',
+      fill: true,
+      class: 'ee-popup__submit'
+    -%}
+
+    {%- comment -%}
+      The two option controls, as inert <template>s. The catalogue decides how
+      many of each a product needs, so JS clones them — but the markup itself,
+      and every SVG in it, stays here in Liquid where it can be reviewed.
+
+      Chips (`103:185`): one 271 × 40.44 box, 0.5px black stroke, split into
+      equal halves, each half carrying a colour bar at its left (`103:151`,
+      `103:152`). A real radio drives it, so arrow-key navigation and the
+      accessibility tree come for free — the visually hidden input is styled
+      away, not removed.
+    {%- endcomment -%}
+    <template data-ee-popup-chips-template>
+      <fieldset class="ee-popup__group">
+        <legend class="ee-popup__label"></legend>
+        <div class="ee-popup__chips"></div>
+      </fieldset>
+    </template>
+
+    <template data-ee-popup-chip-template>
+      <label class="ee-popup__chip">
+        <input class="ee-popup__chip-input" type="radio">
+        <span class="ee-popup__chip-body">
+          <span class="ee-popup__swatch"></span>
+          <span class="ee-popup__chip-text"></span>
+        </span>
+      </label>
+    </template>
+
+    {%- comment -%}
+      Dropdown (`116:954`): a native <select>, so it is keyboard-operable and
+      uses the platform picker on touch. The 0.5px rule at x-offset 216
+      (`116:563`) and the 12 × 6 stroke-1.5 chevron (`116:495`) are decoration
+      painted over it, and are click-through so they never swallow a tap.
+    {%- endcomment -%}
+    <template data-ee-popup-select-template>
+      <div class="ee-popup__group">
+        <label class="ee-popup__label"></label>
+        <div class="ee-popup__select-wrap">
+          <select class="ee-popup__select"></select>
+          <span class="ee-popup__select-divider"></span>
+          <svg class="ee-popup__chevron" viewBox="0 0 12 6" fill="none" aria-hidden="true" focusable="false">
+            <path d="M0.75 0.75 6 5.25 11.25 0.75" stroke="currentColor" stroke-width="1.5" />
+          </svg>
+        </div>
+      </div>
+    </template>
+
+    {%- comment -%}
+      The strings JS needs at runtime. `%option%` is a sentinel the script
+      replaces with the real option name, because interpolation happens in
+      Liquid and the name is only known in the browser.
+    {%- endcomment -%}
+    <script type="application/json" data-ee-popup-strings>
+      {
+        "choose": {{ 'ee.popup.choose' | t: option: '%option%' | json }},
+        "require": {{ 'ee.popup.require' | t: option: '%option%' | json }},
+        "sold_out": {{ 'ee.popup.sold_out' | t | json }},
+        "unavailable": {{ 'ee.popup.unavailable' | t | json }},
+        "adding": {{ 'ee.popup.adding' | t | json }},
+        "added": {{ 'ee.popup.added' | t | json }},
+        "error": {{ 'ee.popup.error' | t | json }}
+      }
+    </script>
+  </div>
+</ee-popup>
